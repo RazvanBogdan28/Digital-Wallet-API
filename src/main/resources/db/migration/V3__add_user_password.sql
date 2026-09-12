@@ -1,0 +1,9 @@
+ALTER TABLE users
+ADD COLUMN password VARCHAR(255);
+
+UPDATE users
+SET password = 'TEMPORARY_PASSWORD'
+WHERE password IS NULL;
+
+ALTER TABLE users
+ALTER COLUMN password SET NOT NULL;
