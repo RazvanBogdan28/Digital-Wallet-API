@@ -10,6 +10,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      DB_PASSWORD: test
+      JWT_SECRET: VGhpc0lzQVRlc3RTZWNyZXRLZXlGb3JDaUF1dG9tYXRlZFRlc3RpbmcxMjM0NTY=
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
