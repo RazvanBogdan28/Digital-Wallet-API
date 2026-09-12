@@ -1,5 +1,7 @@
 # Digital Wallet API
 
+[![CI](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml/badge.svg)](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml)
+
 A backend REST API built with Java and Spring Boot for managing users, wallets, deposits, transfers and transaction history.
 
 The project focuses on backend architecture, security, transactional consistency, idempotency and integration testing.
