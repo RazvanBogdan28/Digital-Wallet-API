@@ -51,6 +51,8 @@ The project focuses on backend architecture, security, transactional consistency
 
 ## Architecture
 
+![Digital Wallet API Architecture](docs/architecture.png)
+
 The application follows a layered architecture:
 
 ```text
