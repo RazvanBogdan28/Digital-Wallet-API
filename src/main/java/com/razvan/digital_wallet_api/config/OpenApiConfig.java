@@ -5,8 +5,11 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 @Configuration
 public class OpenApiConfig {
@@ -24,6 +27,13 @@ public class OpenApiConfig {
                                 .description(
                                         "REST API for users, wallets, transfers, transactions and authentication"
                                 )
+                )
+                .servers(
+                        List.of(
+                                new Server()
+                                        .url("https://digital-wallet-api-production-2f16.up.railway.app")
+                                        .description("Production server")
+                        )
                 )
                 .addSecurityItem(
                         new SecurityRequirement()
