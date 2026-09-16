@@ -38,31 +38,17 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail())
-                .orElse(null);
-
-        System.out.println("LOGIN USER FOUND: " + (user != null));
-
-        if (user == null) {
-            throw new InvalidCredentialsException(
-                    "Invalid email or password"
-            );
-        }
-
-        System.out.println("PASSWORD PRESENT: " +
-                (user.getPassword() != null));
-
-        System.out.println("PASSWORD HASH LENGTH: " +
-                (user.getPassword() != null
-                        ? user.getPassword().length()
-                        : 0));
+                .orElseThrow(() ->
+                        new InvalidCredentialsException(
+                                "Invalid email or password"
+                        )
+                );
 
         boolean passwordMatches =
                 passwordEncoder.matches(
                         request.getPassword(),
                         user.getPassword()
                 );
-
-        System.out.println("PASSWORD MATCHES: " + passwordMatches);
 
         if (!passwordMatches) {
             throw new InvalidCredentialsException(
