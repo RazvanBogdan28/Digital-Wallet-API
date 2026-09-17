@@ -2,9 +2,15 @@
 
 [![CI](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml/badge.svg)](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml)
 
-A backend REST API built with Java and Spring Boot for managing users, wallets, deposits, transfers and transaction history.
+A production-deployed backend REST API built with **Java 21** and **Spring Boot** for user authentication, wallet management, deposits, transfers and transaction history.
 
-The project focuses on backend architecture, security, transactional consistency, idempotency and integration testing.
+The project focuses on **layered architecture, security, transactional consistency, idempotency, concurrency handling and integration testing**.
+
+## Live Demo
+
+- **API:** https://digital-wallet-api-production-2f16.up.railway.app
+- **Swagger UI:** https://digital-wallet-api-production-2f16.up.railway.app/swagger-ui/index.html
+- **GitHub:** https://github.com/RazvanBogdan28/Digital-Wallet-API
 
 ## Features
 
@@ -12,35 +18,35 @@ The project focuses on backend architecture, security, transactional consistency
 - JWT authentication
 - Access and refresh tokens
 - Refresh token persistence
-- Logout and token revocation
-- Role-based authorization
-- USER and ADMIN roles
+- Logout and refresh-token revocation
+- Role-based authorization with `USER` and `ADMIN` roles
 - Wallet creation
-- Multiple wallet currencies
+- Multiple supported currencies (`EUR`, `USD`, `RON`)
 - Deposits
 - Wallet-to-wallet transfers
-- Transaction history
-- Pagination
+- Paginated transaction history
 - Wallet ownership validation
 - Idempotent transfers using `Idempotency-Key`
 - Optimistic locking
-- Global exception handling
 - Request validation
+- Global exception handling
 - Database migrations with Flyway
 - Swagger / OpenAPI documentation
 - Docker and Docker Compose
-- Integration testing with Testcontainers
+- Unit and integration testing with Testcontainers
+- GitHub Actions CI
+- Railway deployment
 
 ## Tech Stack
 
 - Java 21
-- Spring Boot 4
+- Spring Boot 4.1
 - Spring MVC
-- Spring Data JPA
+- Spring Data JPA / Hibernate
 - Spring Security
+- JWT
 - PostgreSQL
 - Flyway
-- JWT
 - Maven
 - Docker
 - Docker Compose
@@ -48,6 +54,8 @@ The project focuses on backend architecture, security, transactional consistency
 - JUnit
 - Mockito
 - Swagger / OpenAPI
+- GitHub Actions
+- Railway
 
 ## Architecture
 
@@ -68,7 +76,7 @@ Repository
 PostgreSQL
 ```
 
-Main packages:
+### Main packages
 
 ```text
 controller
@@ -81,26 +89,24 @@ exception
 config
 ```
 
-Responsibilities:
+### Responsibilities
 
-- **Controller** - handles HTTP requests and responses
-- **Service** - contains business logic
-- **Repository** - handles database access
-- **DTO** - defines API request and response models
-- **Entity** - represents persisted domain objects
-- **Security** - JWT authentication and authorization
-- **Exception** - centralized API error handling
-- **Config** - application and OpenAPI configuration
+- **Controller** — handles HTTP requests and responses
+- **Service** — contains business logic
+- **Repository** — handles database access
+- **DTO** — defines API request and response models
+- **Entity** — represents persisted domain objects
+- **Security** — JWT authentication and authorization
+- **Exception** — centralized API error handling
+- **Config** — application and OpenAPI configuration
 
 ## Domain Model
-
-Main entities:
 
 ### User
 
 Represents an application user.
 
-A user can own multiple wallets.
+A user can own multiple wallets, with the application enforcing one wallet per currency for a user.
 
 ### Wallet
 
@@ -118,19 +124,19 @@ Represents financial operations such as deposits and transfers.
 
 ### Refresh Token
 
-Stores refresh tokens used for generating new access tokens and supports token revocation during logout.
+Stores refresh tokens used to generate new access tokens and supports token revocation during logout.
 
 ## Authentication
 
-The application uses JWT-based stateless authentication.
+The application uses **stateless JWT-based authentication**.
 
-Login:
+### Login
 
 ```http
 POST /api/auth/login
 ```
 
-Example:
+Example request:
 
 ```json
 {
@@ -156,13 +162,13 @@ Protected endpoints require:
 Authorization: Bearer <access-token>
 ```
 
-Refresh access token:
+### Refresh Access Token
 
 ```http
 POST /api/auth/refresh
 ```
 
-Logout:
+### Logout
 
 ```http
 POST /api/auth/logout
@@ -172,9 +178,7 @@ Logout revokes the supplied refresh token.
 
 ## Authorization
 
-The application supports role-based authorization.
-
-Roles:
+The application supports role-based authorization:
 
 ```text
 USER
@@ -229,7 +233,7 @@ Transfers require an idempotency header:
 Idempotency-Key: unique-value
 ```
 
-This prevents the same transfer from being executed more than once.
+Reusing the same key prevents the same transfer from being processed more than once.
 
 ## Transaction History
 
@@ -254,7 +258,7 @@ GET /api/transactions/wallet/1?page=0&size=10
 
 The API uses centralized exception handling and returns structured error responses.
 
-Examples of handled situations:
+Handled situations include:
 
 - invalid credentials
 - validation errors
@@ -299,19 +303,23 @@ Idempotency-Key
 
 header.
 
-Reusing the same key prevents duplicate financial operations.
-
-This is especially important for APIs where clients may retry requests due to network errors.
+Reusing the same key prevents duplicate financial operations. This is especially important when clients retry requests because of network failures.
 
 ## Swagger / OpenAPI
 
-Swagger UI is available at:
+Production Swagger UI:
+
+```text
+https://digital-wallet-api-production-2f16.up.railway.app/swagger-ui/index.html
+```
+
+Local Swagger UI:
 
 ```text
 http://localhost:8080/swagger-ui/index.html
 ```
 
-OpenAPI definition:
+Local OpenAPI definition:
 
 ```text
 http://localhost:8080/v3/api-docs
@@ -365,13 +373,13 @@ docker compose down -v
 
 ## Running Locally
 
-Requirements:
+### Requirements
 
 - Java 21
 - PostgreSQL
 - Maven or Maven Wrapper
 
-Configure the following environment variables:
+Configure these environment variables:
 
 ```text
 DB_PASSWORD
@@ -391,7 +399,7 @@ Default database configuration:
 jdbc:postgresql://localhost:5432/digital_wallet
 ```
 
-Then run:
+Run the application with:
 
 ```bash
 ./mvnw spring-boot:run
@@ -429,6 +437,14 @@ The project includes:
 
 Testcontainers starts an isolated PostgreSQL container for integration testing.
 
+## CI/CD and Deployment
+
+GitHub Actions runs the Maven test suite on pushes and pull requests targeting `main`.
+
+The application is deployed to **Railway** with PostgreSQL as the production database.
+
+Production deployment is available through the links in the **Live Demo** section.
+
 ## Security Notes
 
 Sensitive values such as database passwords and JWT secrets are provided through environment variables.
@@ -443,21 +459,25 @@ Example:
 
 should be included in `.gitignore`.
 
+Never commit production secrets, JWT signing keys or database credentials to the repository.
+
 ## Project Goals
 
-This project was created to demonstrate backend development concepts such as:
+This project demonstrates backend development concepts such as:
 
 - REST API design
 - layered architecture
 - authentication and authorization
 - relational database design
-- transactions
+- transaction management
 - concurrency handling
 - idempotency
 - exception handling
 - automated testing
 - containerization
 - API documentation
+- continuous integration
+- cloud deployment
 
 ## Future Improvements
 
@@ -472,5 +492,4 @@ Possible future additions:
 - fraud / risk checks
 - webhooks
 - observability and metrics
-- CI/CD pipeline
-- cloud deployment
+- frontend application
