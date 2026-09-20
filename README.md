@@ -6,10 +6,13 @@ A production-deployed backend REST API built with **Java 21** and **Spring Boot*
 
 The project focuses on **layered architecture, security, transactional consistency, idempotency, concurrency handling and integration testing**.
 
+A companion React frontend consumes this API — see [Frontend](#frontend) below.
+
 ## Live Demo
 
 - **API:** https://digital-wallet-api-production-2f16.up.railway.app
 - **Swagger UI:** https://digital-wallet-api-production-2f16.up.railway.app/swagger-ui/index.html
+- **Web app:** https://digitalwalletfrontend.vercel.app
 - **GitHub:** https://github.com/RazvanBogdan28/Digital-Wallet-API
 
 ## Features
@@ -36,6 +39,7 @@ The project focuses on **layered architecture, security, transactional consisten
 - Unit and integration testing with Testcontainers
 - GitHub Actions CI
 - Railway deployment
+- React frontend (see [Frontend](#frontend))
 
 ## Tech Stack
 
@@ -191,7 +195,7 @@ For example:
 GET /api/users
 ```
 
-is restricted to users with the `ADMIN` role.
+is restricted to users with the `ADMIN` role, enforced in the service layer so the check applies consistently regardless of how the request reaches the controller.
 
 Wallet operations also enforce ownership rules so users cannot access or modify wallets belonging to other users.
 
@@ -326,6 +330,15 @@ http://localhost:8080/v3/api-docs
 ```
 
 Swagger supports JWT authentication through the **Authorize** button.
+
+## Frontend
+
+A React + Vite single-page client for this API lives in a separate repository:
+
+- **Repo:** https://github.com/RazvanBogdan28/Digital-Wallet-Frontend
+- **Live app:** https://digitalwalletfrontend.vercel.app
+
+It covers registration, sign in, wallet management, deposits, transfers and transaction history, with silent access-token refresh and UI states that reflect the API's ownership and role checks (e.g. a dedicated "no access" view on a `403`, rather than a generic error).
 
 ## Running with Docker
 
@@ -492,4 +505,3 @@ Possible future additions:
 - fraud / risk checks
 - webhooks
 - observability and metrics
-- frontend application
