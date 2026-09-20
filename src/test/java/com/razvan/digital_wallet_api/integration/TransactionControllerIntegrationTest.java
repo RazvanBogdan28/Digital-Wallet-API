@@ -224,7 +224,7 @@ class TransactionControllerIntegrationTest {
                 )
                 .andExpect(
                         jsonPath("$.totalElements")
-                                .value(1)
+                                .value(2)
                 );
     }
 
