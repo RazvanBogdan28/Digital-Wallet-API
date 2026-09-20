@@ -39,11 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        System.out.println("[JWT-DEBUG] " + request.getMethod() + " " + request.getRequestURI()
-                + " | Authorization header present: " + (authHeader != null));
-
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            System.out.println("[JWT-DEBUG] No Bearer header, skipping auth for this request.");
             filterChain.doFilter(request, response);
             return;
         }
@@ -52,7 +48,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String email = jwtService.extractEmail(token);
-            System.out.println("[JWT-DEBUG] Extracted email from token: " + email);
 
             if (email != null &&
                     SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -60,15 +55,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 User user = userRepository.findByEmail(email)
                         .orElse(null);
 
-                System.out.println("[JWT-DEBUG] User found in DB: " + (user != null)
-                        + (user != null ? " | role=" + user.getRole() : ""));
-
-                boolean valid = user != null && jwtService.isTokenValid(token, user.getEmail());
-                boolean isAccess = user != null && jwtService.isAccessToken(token);
-
-                System.out.println("[JWT-DEBUG] isTokenValid=" + valid + " | isAccessToken=" + isAccess);
-
-                if (user != null && valid && isAccess) {
+                if (user != null &&
+                        jwtService.isTokenValid(token, user.getEmail()) &&
+                        jwtService.isAccessToken(token)) {
 
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
@@ -83,15 +72,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     SecurityContextHolder.getContext()
                             .setAuthentication(authentication);
-
-                    System.out.println("[JWT-DEBUG] Authentication SET successfully for " + user.getEmail());
-                } else {
-                    System.out.println("[JWT-DEBUG] Authentication NOT set (conditions failed).");
                 }
             }
 
-        } catch (Exception e) {
-            System.out.println("[JWT-DEBUG] EXCEPTION while processing token: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+        } catch (Exception ignored) {
         }
 
         filterChain.doFilter(request, response);
