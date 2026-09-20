@@ -29,7 +29,11 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.AccessDeniedException;
+import com.razvan.digital_wallet_api.entity.TransactionStatus;
+import com.razvan.digital_wallet_api.entity.TransactionType;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
 @Service
 public class WalletService {
 
@@ -123,6 +127,7 @@ public class WalletService {
         return mapToResponse(wallet);
     }
 
+    @Transactional
     public WalletResponse deposit(Long walletId, DepositRequest request) {
 
         Wallet wallet = walletRepository.findById(walletId)
@@ -131,6 +136,7 @@ public class WalletService {
                                 "Wallet not found with id: " + walletId
                         )
                 );
+
         verifyWalletOwnership(wallet);
 
         BigDecimal newBalance = wallet.getBalance()
@@ -139,6 +145,20 @@ public class WalletService {
         wallet.setBalance(newBalance);
 
         Wallet savedWallet = walletRepository.save(wallet);
+
+        Transaction transaction = new Transaction(
+                wallet,
+                wallet,
+                request.getAmount(),
+                wallet.getCurrency(),
+                TransactionType.DEPOSIT,
+                TransactionStatus.COMPLETED,
+                LocalDateTime.now(),
+                UUID.randomUUID().toString(),
+                "Deposit"
+        );
+
+        transactionRepository.save(transaction);
 
         return mapToResponse(savedWallet);
     }
