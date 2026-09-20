@@ -83,6 +83,13 @@ public class DigitalWalletApiApplication {
                                                 "Unauthorized"
                                         )
                         )
+                        .accessDeniedHandler(
+                                (request, response, accessDeniedException) ->
+                                        response.sendError(
+                                                HttpServletResponse.SC_FORBIDDEN,
+                                                "Forbidden"
+                                        )
+                        )
                 )
 
                 .authorizeHttpRequests(auth -> auth
