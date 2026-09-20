@@ -6,6 +6,9 @@ import com.razvan.digital_wallet_api.entity.User;
 import com.razvan.digital_wallet_api.exception.UserAlreadyExistsException;
 import com.razvan.digital_wallet_api.exception.UserNotFoundException;
 import com.razvan.digital_wallet_api.repository.UserRepository;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -52,6 +55,15 @@ public class UserService {
     }
 
     public List<UserResponse> getAllUsers() {
+
+        User authenticatedUser = getAuthenticatedUser();
+
+        if (authenticatedUser.getRole() != Role.ADMIN) {
+            throw new AccessDeniedException(
+                    "Admin role required"
+            );
+        }
+
         return userRepository.findAll()
                 .stream()
                 .map(this::mapToResponse)
@@ -77,5 +89,20 @@ public class UserService {
                 );
 
         return mapToResponse(user);
+    }
+
+    private User getAuthenticatedUser() {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        String email = authentication.getName();
+
+        return userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new UserNotFoundException(
+                                "Authenticated user not found"
+                        )
+                );
     }
 }

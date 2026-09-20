@@ -103,9 +103,6 @@ public class DigitalWalletApiApplication {
 
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
 
-                        .requestMatchers(HttpMethod.GET, "/api/users")
-                        .hasRole("ADMIN")
-
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
