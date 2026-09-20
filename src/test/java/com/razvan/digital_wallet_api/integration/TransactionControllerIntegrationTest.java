@@ -193,7 +193,7 @@ class TransactionControllerIntegrationTest {
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
-                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content.length()").value(2))
                 .andExpect(
                         jsonPath("$.content[0].fromWalletId")
                                 .value(wallet1Id)
