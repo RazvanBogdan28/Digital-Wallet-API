@@ -336,6 +336,8 @@ class WalletServiceTest {
                 new BigDecimal("125.00"),
                 response.getBalance()
         );
+
+        verify(transactionRepository).save(any(Transaction.class));
     }
 
     @Test
