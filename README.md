@@ -1,6 +1,7 @@
 # Digital Wallet API
 
 [![CI](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml/badge.svg)](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A production-deployed backend REST API built with **Java 21** and **Spring Boot** for user authentication, wallet management, deposits, transfers and transaction history.
 
@@ -134,6 +135,27 @@ Stores refresh tokens used to generate new access tokens and supports token revo
 
 The application uses **stateless JWT-based authentication**.
 
+### Register
+
+Registration is handled by the users endpoint:
+
+```http
+POST /api/users
+```
+
+Example request:
+
+```json
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Returns `201 Created` with the new user (`id`, `firstName`, `lastName`, `email`). New accounts get the `USER` role.
+
 ### Login
 
 ```http
@@ -239,6 +261,34 @@ Idempotency-Key: unique-value
 
 Reusing the same key prevents the same transfer from being processed more than once.
 
+Example request:
+
+```http
+POST /api/wallets/1/transfer
+Authorization: Bearer <access-token>
+Idempotency-Key: 6f1c2b3e-8a4d-4e7f-9c21-0b5d3a7e9f10
+Content-Type: application/json
+```
+
+```json
+{
+  "toWalletId": 2,
+  "amount": 25.00,
+  "description": "Dinner split"
+}
+```
+
+Successful response (the updated source wallet):
+
+```json
+{
+  "id": 1,
+  "userId": 1,
+  "currency": "EUR",
+  "balance": 75.00
+}
+```
+
 ## Transaction History
 
 ```http
@@ -277,6 +327,17 @@ Handled situations include:
 - unauthorized access
 - forbidden wallet access
 
+Example (`400 Bad Request` on a transfer larger than the balance):
+
+```json
+{
+  "error": "INSUFFICIENT_FUNDS",
+  "message": "Insufficient funds in wallet with id: 1",
+  "timestamp": "2026-09-20T19:20:47.657821911",
+  "status": 400
+}
+```
+
 ## Database Migrations
 
 Flyway is used for schema migrations.
@@ -288,6 +349,10 @@ src/main/resources/db/migration
 ```
 
 Flyway automatically applies migrations when the application starts.
+
+## Money Handling
+
+Monetary amounts use `BigDecimal` in the application and `NUMERIC(19, 2)` columns in PostgreSQL, so no floating-point rounding errors occur. Transfers are only allowed between wallets with the same currency; a mismatch is rejected with a structured error.
 
 ## Optimistic Locking
 
@@ -308,6 +373,8 @@ Idempotency-Key
 header.
 
 Reusing the same key prevents duplicate financial operations. This is especially important when clients retry requests because of network failures.
+
+If a key has already been used, the API does not process the transfer again and returns `409 Conflict` with the error code `DUPLICATE_TRANSACTION`. Keys are unique across the whole system, so clients should generate a fresh UUID per transfer attempt (the frontend does this automatically).
 
 ## Swagger / OpenAPI
 
@@ -505,3 +572,7 @@ Possible future additions:
 - fraud / risk checks
 - webhooks
 - observability and metrics
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
