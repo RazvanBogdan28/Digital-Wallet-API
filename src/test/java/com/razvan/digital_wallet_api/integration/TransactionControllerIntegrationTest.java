@@ -147,15 +147,19 @@ class TransactionControllerIntegrationTest {
         mockMvc.perform(
                         post("/api/wallets/" + wallet1Id + "/deposit")
                                 .header(
+                                        "Idempotency-Key",
+                                        "transaction-history-deposit"
+                                )
+                                .header(
                                         "Authorization",
                                         "Bearer " + user1Token
                                 )
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
-                                        {
-                                          "amount": 100.00
-                                        }
-                                        """)
+                                {
+                                  "amount": 100.00
+                                }
+                                """)
                 )
                 .andExpect(status().isOk());
 
