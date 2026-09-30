@@ -1,41 +1,45 @@
 package com.razvan.digital_wallet_api.service;
 
 import com.razvan.digital_wallet_api.dto.CreateWalletRequest;
-import com.razvan.digital_wallet_api.dto.WalletResponse;
-import com.razvan.digital_wallet_api.entity.User;
-import com.razvan.digital_wallet_api.entity.Wallet;
-import com.razvan.digital_wallet_api.exception.UserNotFoundException;
-import com.razvan.digital_wallet_api.repository.UserRepository;
-import com.razvan.digital_wallet_api.repository.WalletRepository;
-import org.springframework.stereotype.Service;
-import com.razvan.digital_wallet_api.exception.WalletAlreadyExistsException;
-import com.razvan.digital_wallet_api.exception.WalletNotFoundException;
 import com.razvan.digital_wallet_api.dto.DepositRequest;
 import com.razvan.digital_wallet_api.dto.TransferRequest;
-import com.razvan.digital_wallet_api.exception.InsufficientFundsException;
-import org.springframework.transaction.annotation.Transactional;
+import com.razvan.digital_wallet_api.dto.WalletResponse;
+import com.razvan.digital_wallet_api.entity.Currency;
 import com.razvan.digital_wallet_api.entity.Transaction;
 import com.razvan.digital_wallet_api.entity.TransactionStatus;
 import com.razvan.digital_wallet_api.entity.TransactionType;
-import com.razvan.digital_wallet_api.repository.TransactionRepository;
-import com.razvan.digital_wallet_api.exception.SameWalletTransferException;
+import com.razvan.digital_wallet_api.entity.User;
+import com.razvan.digital_wallet_api.entity.Wallet;
 import com.razvan.digital_wallet_api.exception.CurrencyMismatchException;
 import com.razvan.digital_wallet_api.exception.DuplicateTransactionException;
-import com.razvan.digital_wallet_api.entity.Currency;
-import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.time.LocalDateTime;
-import java.math.BigDecimal;
-import java.util.List;
-import org.springframework.security.core.Authentication;
+import com.razvan.digital_wallet_api.exception.InsufficientFundsException;
+import com.razvan.digital_wallet_api.exception.SameWalletTransferException;
+import com.razvan.digital_wallet_api.exception.UserNotFoundException;
+import com.razvan.digital_wallet_api.exception.WalletAlreadyExistsException;
+import com.razvan.digital_wallet_api.exception.WalletNotFoundException;
+import com.razvan.digital_wallet_api.repository.TransactionRepository;
+import com.razvan.digital_wallet_api.repository.UserRepository;
+import com.razvan.digital_wallet_api.repository.WalletRepository;
 import org.springframework.security.access.AccessDeniedException;
-import com.razvan.digital_wallet_api.entity.TransactionStatus;
-import com.razvan.digital_wallet_api.entity.TransactionType;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
+
 @Service
 public class WalletService {
+
+    private static final BigDecimal MIN_AMOUNT =
+            new BigDecimal("0.01");
+
+    private static final BigDecimal MAX_BALANCE =
+            new BigDecimal("99999999999999999.99");
 
     private final WalletRepository walletRepository;
     private final UserRepository userRepository;
@@ -44,15 +48,14 @@ public class WalletService {
     public WalletService(
             WalletRepository walletRepository,
             UserRepository userRepository,
-            TransactionRepository transactionRepository) {
-
+            TransactionRepository transactionRepository
+    ) {
         this.walletRepository = walletRepository;
         this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
     }
 
     public WalletResponse createWallet(CreateWalletRequest request) {
-
         User authenticatedUser = getAuthenticatedUser();
 
         if (!authenticatedUser.getId().equals(request.getUserId())) {
@@ -60,6 +63,7 @@ public class WalletService {
                     "You cannot create a wallet for another user"
             );
         }
+
         User user = userRepository.findById(request.getUserId())
                 .orElseThrow(() ->
                         new UserNotFoundException(
@@ -71,8 +75,8 @@ public class WalletService {
 
         if (walletRepository.existsByUserIdAndCurrency(
                 request.getUserId(),
-                currency)) {
-
+                currency
+        )) {
             throw new WalletAlreadyExistsException(
                     "User already has a wallet in currency: " + currency
             );
@@ -90,7 +94,6 @@ public class WalletService {
     }
 
     public List<WalletResponse> getWalletsByUserId(Long userId) {
-
         User authenticatedUser = getAuthenticatedUser();
 
         if (!authenticatedUser.getId().equals(userId)) {
@@ -105,23 +108,14 @@ public class WalletService {
                 .toList();
     }
 
-    private WalletResponse mapToResponse(Wallet wallet) {
-        return new WalletResponse(
-                wallet.getId(),
-                wallet.getUser().getId(),
-                wallet.getCurrency(),
-                wallet.getBalance()
-        );
-    }
-
     public WalletResponse getWalletById(Long id) {
-
         Wallet wallet = walletRepository.findById(id)
                 .orElseThrow(() ->
                         new WalletNotFoundException(
                                 "Wallet not found with id: " + id
                         )
                 );
+
         verifyWalletOwnership(wallet);
 
         return mapToResponse(wallet);
@@ -129,7 +123,6 @@ public class WalletService {
 
     @Transactional
     public WalletResponse deposit(Long walletId, DepositRequest request) {
-
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() ->
                         new WalletNotFoundException(
@@ -139,8 +132,10 @@ public class WalletService {
 
         verifyWalletOwnership(wallet);
 
-        BigDecimal newBalance = wallet.getBalance()
-                .add(request.getAmount());
+        BigDecimal amount = validateAmount(request.getAmount());
+        BigDecimal newBalance = wallet.getBalance().add(amount);
+
+        validateBalance(newBalance);
 
         wallet.setBalance(newBalance);
 
@@ -149,7 +144,7 @@ public class WalletService {
         Transaction transaction = new Transaction(
                 wallet,
                 wallet,
-                request.getAmount(),
+                amount,
                 wallet.getCurrency(),
                 TransactionType.DEPOSIT,
                 TransactionStatus.COMPLETED,
@@ -167,12 +162,10 @@ public class WalletService {
     public WalletResponse transfer(
             Long fromWalletId,
             TransferRequest request,
-            String idempotencyKey) {
-
-        if (transactionRepository
-                .findByIdempotencyKey(idempotencyKey)
+            String idempotencyKey
+    ) {
+        if (transactionRepository.findByIdempotencyKey(idempotencyKey)
                 .isPresent()) {
-
             throw new DuplicateTransactionException(
                     "Transfer already processed"
             );
@@ -184,12 +177,14 @@ public class WalletService {
                                 "Source wallet not found with id: " + fromWalletId
                         )
                 );
+
         verifyWalletOwnership(fromWallet);
 
         Wallet toWallet = walletRepository.findById(request.getToWalletId())
                 .orElseThrow(() ->
                         new WalletNotFoundException(
-                                "Destination wallet not found with id: " + request.getToWalletId()
+                                "Destination wallet not found with id: "
+                                        + request.getToWalletId()
                         )
                 );
 
@@ -205,19 +200,25 @@ public class WalletService {
             );
         }
 
-        if (fromWallet.getBalance().compareTo(request.getAmount()) < 0) {
+        BigDecimal amount = validateAmount(request.getAmount());
+
+        if (fromWallet.getBalance().compareTo(amount) < 0) {
             throw new InsufficientFundsException(
                     "Insufficient funds in wallet with id: " + fromWalletId
             );
         }
 
-        fromWallet.setBalance(
-                fromWallet.getBalance().subtract(request.getAmount())
-        );
+        BigDecimal newFromBalance =
+                fromWallet.getBalance().subtract(amount);
 
-        toWallet.setBalance(
-                toWallet.getBalance().add(request.getAmount())
-        );
+        BigDecimal newToBalance =
+                toWallet.getBalance().add(amount);
+
+        validateBalance(newFromBalance);
+        validateBalance(newToBalance);
+
+        fromWallet.setBalance(newFromBalance);
+        toWallet.setBalance(newToBalance);
 
         walletRepository.save(fromWallet);
         walletRepository.save(toWallet);
@@ -225,7 +226,7 @@ public class WalletService {
         Transaction transaction = new Transaction(
                 fromWallet,
                 toWallet,
-                request.getAmount(),
+                amount,
                 fromWallet.getCurrency(),
                 TransactionType.TRANSFER,
                 TransactionStatus.COMPLETED,
@@ -238,27 +239,81 @@ public class WalletService {
 
         return mapToResponse(fromWallet);
     }
-    private User getAuthenticatedUser() {
 
+    private BigDecimal validateAmount(BigDecimal amount) {
+        if (amount == null) {
+            throw new IllegalArgumentException(
+                    "Amount is required"
+            );
+        }
+
+        if (amount.compareTo(MIN_AMOUNT) < 0) {
+            throw new IllegalArgumentException(
+                    "Amount must be at least 0.01"
+            );
+        }
+
+        if (amount.compareTo(MAX_BALANCE) > 0) {
+            throw new IllegalArgumentException(
+                    "Amount exceeds the supported limit"
+            );
+        }
+
+        try {
+            return amount.setScale(2, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException ex) {
+            throw new IllegalArgumentException(
+                    "Amount must not require rounding to two decimal places"
+            );
+        }
+    }
+
+    private void validateBalance(BigDecimal balance) {
+        if (balance.signum() < 0) {
+            throw new IllegalArgumentException(
+                    "Wallet balance cannot be negative"
+            );
+        }
+
+        if (balance.compareTo(MAX_BALANCE) > 0) {
+            throw new IllegalArgumentException(
+                    "Resulting wallet balance exceeds the supported limit"
+            );
+        }
+    }
+
+    private WalletResponse mapToResponse(Wallet wallet) {
+        return new WalletResponse(
+                wallet.getId(),
+                wallet.getUser().getId(),
+                wallet.getCurrency(),
+                wallet.getBalance()
+        );
+    }
+
+    private User getAuthenticatedUser() {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
 
-        String email = authentication.getName();
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+            throw new AccessDeniedException(
+                    "Authentication required"
+            );
+        }
 
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() ->
                         new UserNotFoundException(
                                 "Authenticated user not found"
                         )
                 );
     }
-    private void verifyWalletOwnership(Wallet wallet) {
 
+    private void verifyWalletOwnership(Wallet wallet) {
         User authenticatedUser = getAuthenticatedUser();
 
-        if (!wallet.getUser().getId()
-                .equals(authenticatedUser.getId())) {
-
+        if (!wallet.getUser().getId().equals(authenticatedUser.getId())) {
             throw new AccessDeniedException(
                     "You do not have access to this wallet"
             );

@@ -1,6 +1,8 @@
 package com.razvan.digital_wallet_api.integration;
 
+import com.razvan.digital_wallet_api.entity.Currency;
 import com.razvan.digital_wallet_api.entity.User;
+import com.razvan.digital_wallet_api.entity.Wallet;
 import com.razvan.digital_wallet_api.repository.TransactionRepository;
 import com.razvan.digital_wallet_api.repository.UserRepository;
 import com.razvan.digital_wallet_api.repository.WalletRepository;
@@ -519,5 +521,170 @@ class WalletControllerIntegrationTest {
                                 .content(requestBody)
                 )
                 .andExpect(status().isForbidden());
+    }
+
+    private Wallet createMoneyTestWallet(String email, String balance) {
+        User user = userRepository.save(
+                new User(
+                        "Money",
+                        "Test",
+                        email,
+                        "password123"
+                )
+        );
+
+        return walletRepository.saveAndFlush(
+                new Wallet(
+                        Currency.EUR,
+                        new BigDecimal(balance),
+                        user
+                )
+        );
+    }
+
+    private void assertWalletBalance(Long walletId, String expected) {
+        Wallet wallet = walletRepository.findById(walletId)
+                .orElseThrow();
+
+        assertEquals(
+                new BigDecimal(expected),
+                wallet.getBalance()
+        );
+    }
+
+    @Test
+    void depositShouldRejectAmountWithThreeDecimals() throws Exception {
+        Wallet wallet = createMoneyTestWallet(
+                "decimal-deposit@test.com",
+                "1.00"
+        );
+
+        String token =
+                jwtService.generateAccessToken(wallet.getUser().getEmail());
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/deposit", wallet.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "amount": 0.015
+                                        }
+                                        """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+
+        assertWalletBalance(wallet.getId(), "1.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void transferShouldRejectAmountWithThreeDecimals() throws Exception {
+        Wallet source = createMoneyTestWallet(
+                "decimal-source@test.com",
+                "1.00"
+        );
+
+        Wallet destination = createMoneyTestWallet(
+                "decimal-destination@test.com",
+                "0.00"
+        );
+
+        String token =
+                jwtService.generateAccessToken(source.getUser().getEmail());
+
+        String body = """
+                {
+                  "toWalletId": %d,
+                  "amount": 0.015,
+                  "description": "Invalid decimal transfer"
+                }
+                """.formatted(destination.getId());
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/transfer", source.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .header(
+                                        "Idempotency-Key",
+                                        "reject-three-decimals"
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+
+        assertWalletBalance(source.getId(), "1.00");
+        assertWalletBalance(destination.getId(), "0.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void depositShouldRejectResultingBalanceOverflow() throws Exception {
+        Wallet wallet = createMoneyTestWallet(
+                "overflow-deposit@test.com",
+                "99999999999999999.99"
+        );
+
+        String token =
+                jwtService.generateAccessToken(wallet.getUser().getEmail());
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/deposit", wallet.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "amount": 0.01
+                                        }
+                                        """)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_PARAMETER"));
+
+        assertWalletBalance(wallet.getId(), "99999999999999999.99");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void transferShouldRejectDestinationBalanceOverflow() throws Exception {
+        Wallet source = createMoneyTestWallet(
+                "overflow-source@test.com",
+                "1.00"
+        );
+
+        Wallet destination = createMoneyTestWallet(
+                "overflow-destination@test.com",
+                "99999999999999999.99"
+        );
+
+        String token =
+                jwtService.generateAccessToken(source.getUser().getEmail());
+
+        String body = """
+                {
+                  "toWalletId": %d,
+                  "amount": 0.01,
+                  "description": "Destination overflow"
+                }
+                """.formatted(destination.getId());
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/transfer", source.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .header(
+                                        "Idempotency-Key",
+                                        "reject-destination-overflow"
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body)
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_PARAMETER"));
+
+        assertWalletBalance(source.getId(), "1.00");
+        assertWalletBalance(destination.getId(), "99999999999999999.99");
+        assertEquals(0L, transactionRepository.count());
     }
 }

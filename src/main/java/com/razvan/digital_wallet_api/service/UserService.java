@@ -2,6 +2,7 @@ package com.razvan.digital_wallet_api.service;
 
 import com.razvan.digital_wallet_api.dto.CreateUserRequest;
 import com.razvan.digital_wallet_api.dto.UserResponse;
+import com.razvan.digital_wallet_api.entity.Role;
 import com.razvan.digital_wallet_api.entity.User;
 import com.razvan.digital_wallet_api.exception.UserAlreadyExistsException;
 import com.razvan.digital_wallet_api.exception.UserNotFoundException;
@@ -13,7 +14,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import com.razvan.digital_wallet_api.entity.Role;
 
 @Service
 public class UserService {
@@ -30,7 +30,6 @@ public class UserService {
     }
 
     public UserResponse createUser(CreateUserRequest request) {
-
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new UserAlreadyExistsException(
                     "A user with this email already exists"
@@ -55,7 +54,6 @@ public class UserService {
     }
 
     public List<UserResponse> getAllUsers() {
-
         User authenticatedUser = getAuthenticatedUser();
 
         if (authenticatedUser.getRole() != Role.ADMIN) {
@@ -70,16 +68,20 @@ public class UserService {
                 .toList();
     }
 
-    private UserResponse mapToResponse(User user) {
-        return new UserResponse(
-                user.getId(),
-                user.getFirstName(),
-                user.getLastName(),
-                user.getEmail()
-        );
-    }
-
     public UserResponse getUserById(Long id) {
+        User authenticatedUser = getAuthenticatedUser();
+
+        boolean isAdmin =
+                authenticatedUser.getRole() == Role.ADMIN;
+
+        boolean isOwnProfile =
+                authenticatedUser.getId().equals(id);
+
+        if (!isAdmin && !isOwnProfile) {
+            throw new AccessDeniedException(
+                    "You do not have access to this user profile"
+            );
+        }
 
         User user = userRepository.findById(id)
                 .orElseThrow(() ->
@@ -91,10 +93,26 @@ public class UserService {
         return mapToResponse(user);
     }
 
-    private User getAuthenticatedUser() {
+    private UserResponse mapToResponse(User user) {
+        return new UserResponse(
+                user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
+                user.getEmail()
+        );
+    }
 
+    private User getAuthenticatedUser() {
         Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+                SecurityContextHolder.getContext()
+                        .getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()) {
+            throw new AccessDeniedException(
+                    "Authentication required"
+            );
+        }
 
         String email = authentication.getName();
 
