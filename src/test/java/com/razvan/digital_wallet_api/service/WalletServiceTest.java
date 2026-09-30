@@ -40,6 +40,8 @@ import org.springframework.security.access.AccessDeniedException;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.Optional;
+import com.razvan.digital_wallet_api.entity.Role;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -532,5 +534,53 @@ class WalletServiceTest {
         return new Transaction(fromWallet, fromWallet, new BigDecimal(amount),
                 Currency.EUR, TransactionType.DEPOSIT, TransactionStatus.COMPLETED,
                 LocalDateTime.now(), key, "Deposit");
+    }
+    @Test
+    void getWalletsByUserIdShouldAllowOwner() {
+        user1.setRole(Role.USER);
+        mockAuthenticatedUser();
+
+        when(walletRepository.findByUserId(1L))
+                .thenReturn(List.of(fromWallet));
+
+        List<WalletResponse> response =
+                walletService.getWalletsByUserId(1L);
+
+        assertEquals(1, response.size());
+        assertEquals(1L, response.get(0).getId());
+        assertEquals(1L, response.get(0).getUserId());
+    }
+
+    @Test
+    void getWalletsByUserIdShouldAllowAdminForAnotherUser() {
+        user1.setRole(Role.ADMIN);
+        mockAuthenticatedUser();
+
+        when(walletRepository.findByUserId(2L))
+                .thenReturn(List.of(toWallet));
+
+        List<WalletResponse> response =
+                walletService.getWalletsByUserId(2L);
+
+        assertEquals(1, response.size());
+        assertEquals(2L, response.get(0).getId());
+        assertEquals(2L, response.get(0).getUserId());
+        assertEquals(
+                new BigDecimal("50.00"),
+                response.get(0).getBalance()
+        );
+    }
+
+    @Test
+    void getWalletsByUserIdShouldDenyNormalUserForAnotherUser() {
+        user1.setRole(Role.USER);
+        mockAuthenticatedUser();
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> walletService.getWalletsByUserId(2L)
+        );
+
+        verify(walletRepository, never()).findByUserId(2L);
     }
 }

@@ -5,6 +5,7 @@ import com.razvan.digital_wallet_api.dto.DepositRequest;
 import com.razvan.digital_wallet_api.dto.TransferRequest;
 import com.razvan.digital_wallet_api.dto.WalletResponse;
 import com.razvan.digital_wallet_api.entity.Currency;
+import com.razvan.digital_wallet_api.entity.Role;
 import com.razvan.digital_wallet_api.entity.Transaction;
 import com.razvan.digital_wallet_api.entity.TransactionStatus;
 import com.razvan.digital_wallet_api.entity.TransactionType;
@@ -95,7 +96,10 @@ public class WalletService {
     public List<WalletResponse> getWalletsByUserId(Long userId) {
         User authenticatedUser = getAuthenticatedUser();
 
-        if (!authenticatedUser.getId().equals(userId)) {
+        boolean isOwner = authenticatedUser.getId().equals(userId);
+        boolean isAdmin = authenticatedUser.getRole() == Role.ADMIN;
+
+        if (!isOwner && !isAdmin) {
             throw new AccessDeniedException(
                     "You do not have access to these wallets"
             );

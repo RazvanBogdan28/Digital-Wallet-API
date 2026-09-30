@@ -7,6 +7,7 @@ import com.razvan.digital_wallet_api.repository.TransactionRepository;
 import com.razvan.digital_wallet_api.repository.UserRepository;
 import com.razvan.digital_wallet_api.repository.WalletRepository;
 import com.razvan.digital_wallet_api.service.JwtService;
+import com.razvan.digital_wallet_api.entity.Role;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -831,5 +832,155 @@ class WalletControllerIntegrationTest {
                 .content("{\"amount\":" + amount + "}");
         if (key != null) call.header("Idempotency-Key", key);
         return call;
+    }
+    @Test
+    void getWalletsByUserIdShouldReturn200ForOwner() throws Exception {
+        Wallet wallet = createMoneyTestWallet(
+                "wallet-list-owner@test.com", "25.00"
+        );
+
+        String token = jwtService.generateAccessToken(
+                wallet.getUser().getEmail()
+        );
+
+        mockMvc.perform(
+                        get("/api/wallets/user/{userId}",
+                                wallet.getUser().getId())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(wallet.getId()))
+                .andExpect(jsonPath("$[0].userId")
+                        .value(wallet.getUser().getId()))
+                .andExpect(jsonPath("$[0].balance").value(25.00));
+    }
+
+    @Test
+    void getWalletsByUserIdShouldReturn403ForAnotherNormalUser()
+            throws Exception {
+        Wallet ownerWallet = createMoneyTestWallet(
+                "wallet-list-protected@test.com", "25.00"
+        );
+
+        User otherUser = new User(
+                "Other", "User",
+                "wallet-list-other@test.com", "password123"
+        );
+        otherUser.setRole(Role.USER);
+        otherUser = userRepository.saveAndFlush(otherUser);
+
+        String token = jwtService.generateAccessToken(otherUser.getEmail());
+
+        mockMvc.perform(
+                        get("/api/wallets/user/{userId}",
+                                ownerWallet.getUser().getId())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isForbidden());
+
+        assertWalletBalance(ownerWallet.getId(), "25.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void getWalletsByUserIdShouldReturn200ForAdmin() throws Exception {
+        Wallet ownerWallet = createMoneyTestWallet(
+                "admin-readable-wallet@test.com", "50.00"
+        );
+
+        String token = createAdminAccessToken(
+                "admin-wallet-list@test.com"
+        );
+
+        mockMvc.perform(
+                        get("/api/wallets/user/{userId}",
+                                ownerWallet.getUser().getId())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(ownerWallet.getId()))
+                .andExpect(jsonPath("$[0].userId")
+                        .value(ownerWallet.getUser().getId()))
+                .andExpect(jsonPath("$[0].currency").value("EUR"))
+                .andExpect(jsonPath("$[0].balance").value(50.00));
+
+        assertWalletBalance(ownerWallet.getId(), "50.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void depositShouldReturn403ForAdminOnAnotherUsersWallet()
+            throws Exception {
+        Wallet ownerWallet = createMoneyTestWallet(
+                "admin-deposit-protected@test.com", "50.00"
+        );
+
+        String token = createAdminAccessToken(
+                "admin-deposit@test.com"
+        );
+
+        mockMvc.perform(
+                        depositCall(
+                                ownerWallet.getId(),
+                                token,
+                                UUID.randomUUID().toString(),
+                                "25.00"
+                        )
+                )
+                .andExpect(status().isForbidden());
+
+        assertWalletBalance(ownerWallet.getId(), "50.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void transferShouldReturn403ForAdminFromAnotherUsersWallet()
+            throws Exception {
+        Wallet source = createMoneyTestWallet(
+                "admin-transfer-source@test.com", "100.00"
+        );
+        Wallet destination = createMoneyTestWallet(
+                "admin-transfer-destination@test.com", "10.00"
+        );
+
+        String token = createAdminAccessToken(
+                "admin-transfer@test.com"
+        );
+
+        String body = """
+                {
+                  "toWalletId": %d,
+                  "amount": 25.00,
+                  "description": "Forbidden admin transfer"
+                }
+                """.formatted(destination.getId());
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/transfer", source.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .header(
+                                        "Idempotency-Key",
+                                        UUID.randomUUID().toString()
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body)
+                )
+                .andExpect(status().isForbidden());
+
+        assertWalletBalance(source.getId(), "100.00");
+        assertWalletBalance(destination.getId(), "10.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    private String createAdminAccessToken(String email) {
+        User admin = new User(
+                "Admin", "Test", email, "password123"
+        );
+        admin.setRole(Role.ADMIN);
+        admin = userRepository.saveAndFlush(admin);
+
+        return jwtService.generateAccessToken(admin.getEmail());
     }
 }
