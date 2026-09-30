@@ -23,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -213,5 +214,110 @@ class UserControllerIntegrationTest {
                         get("/api/users/{id}", user.getId())
                 )
                 .andExpect(status().isUnauthorized());
+    }
+    @Test
+    void createUserShouldRejectFirstNameLongerThan255() throws Exception {
+        CreateUserRequest request = validRegistrationRequest();
+        request.setFirstName("a".repeat(256));
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message")
+                        .value("First name must not exceed 255 characters"));
+
+        assertEquals(0L, userRepository.count());
+    }
+
+    @Test
+    void createUserShouldRejectLastNameLongerThan255() throws Exception {
+        CreateUserRequest request = validRegistrationRequest();
+        request.setLastName("a".repeat(256));
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message")
+                        .value("Last name must not exceed 255 characters"));
+
+        assertEquals(0L, userRepository.count());
+    }
+
+    @Test
+    void createUserShouldRejectEmailLongerThan255() throws Exception {
+        CreateUserRequest request = validRegistrationRequest();
+        request.setEmail(boundaryEmail(59));
+
+        assertEquals(256, request.getEmail().length());
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"));
+
+        assertEquals(0L, userRepository.count());
+    }
+
+    @Test
+    void createUserShouldAcceptFieldsAt255CharacterLimit() throws Exception {
+        CreateUserRequest request = validRegistrationRequest();
+        request.setFirstName("a".repeat(255));
+        request.setLastName("b".repeat(255));
+        request.setEmail(boundaryEmail(58));
+
+        assertEquals(255, request.getEmail().length());
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request))
+                )
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.firstName")
+                        .value(request.getFirstName()))
+                .andExpect(jsonPath("$.lastName")
+                        .value(request.getLastName()))
+                .andExpect(jsonPath("$.email")
+                        .value(request.getEmail()))
+                .andExpect(jsonPath("$.password").doesNotExist());
+
+        assertEquals(1L, userRepository.count());
+
+        User saved = userRepository.findByEmail(request.getEmail())
+                .orElseThrow();
+
+        assertEquals(request.getFirstName(), saved.getFirstName());
+        assertEquals(request.getLastName(), saved.getLastName());
+    }
+
+    private CreateUserRequest validRegistrationRequest() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.setFirstName("Razvan");
+        request.setLastName("Test");
+        request.setEmail("validation@test.com");
+        request.setPassword("password123");
+        return request;
+    }
+
+    private String boundaryEmail(int finalLabelLength) {
+        return "a".repeat(64)
+                + "@"
+                + "b".repeat(63)
+                + "."
+                + "c".repeat(63)
+                + "."
+                + "d".repeat(finalLabelLength)
+                + ".com";
     }
 }

@@ -983,4 +983,40 @@ class WalletControllerIntegrationTest {
 
         return jwtService.generateAccessToken(admin.getEmail());
     }
+    @Test
+    void createWalletShouldRejectNonPositiveUserId() throws Exception {
+        User user = new User(
+                "Validation",
+                "Test",
+                "invalid-wallet-user-id@test.com",
+                "password123"
+        );
+        user.setRole(Role.USER);
+        user = userRepository.saveAndFlush(user);
+
+        String token = jwtService.generateAccessToken(user.getEmail());
+
+        for (long invalidId : new long[]{0L, -1L}) {
+            String body = """
+                    {
+                      "userId": %d,
+                      "currency": "EUR"
+                    }
+                    """.formatted(invalidId);
+
+            mockMvc.perform(
+                            post("/api/wallets")
+                                    .header("Authorization", "Bearer " + token)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(body)
+                    )
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                    .andExpect(jsonPath("$.message")
+                            .value("User id must be greater than 0"));
+        }
+
+        assertEquals(0L, walletRepository.count());
+        assertEquals(0L, transactionRepository.count());
+    }
 }

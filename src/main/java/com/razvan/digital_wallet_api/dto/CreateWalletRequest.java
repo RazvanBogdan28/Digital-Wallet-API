@@ -1,11 +1,13 @@
 package com.razvan.digital_wallet_api.dto;
 
-import jakarta.validation.constraints.NotNull;
 import com.razvan.digital_wallet_api.entity.Currency;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
 public class CreateWalletRequest {
 
     @NotNull(message = "User id is required")
+    @Positive(message = "User id must be greater than 0")
     private Long userId;
 
     @NotNull(message = "Currency is required")
