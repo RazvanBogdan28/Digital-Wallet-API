@@ -25,6 +25,12 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -207,6 +213,7 @@ class WalletControllerIntegrationTest {
 
         mockMvc.perform(
                         post("/api/wallets/" + walletId + "/deposit")
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
                                 .header(
                                         "Authorization",
                                         "Bearer " + token
@@ -301,6 +308,7 @@ class WalletControllerIntegrationTest {
 
         mockMvc.perform(
                         post("/api/wallets/" + wallet1Id + "/deposit")
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
                                 .header(
                                         "Authorization",
                                         "Bearer " + user1Token
@@ -403,6 +411,7 @@ class WalletControllerIntegrationTest {
 
         mockMvc.perform(
                         post("/api/wallets/" + walletId + "/deposit")
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
                                 .header(
                                         "Authorization",
                                         "Bearer " + user2Token
@@ -564,6 +573,7 @@ class WalletControllerIntegrationTest {
 
         mockMvc.perform(
                         post("/api/wallets/{id}/deposit", wallet.getId())
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
                                 .header("Authorization", "Bearer " + token)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
@@ -632,6 +642,7 @@ class WalletControllerIntegrationTest {
 
         mockMvc.perform(
                         post("/api/wallets/{id}/deposit", wallet.getId())
+                                .header("Idempotency-Key", UUID.randomUUID().toString())
                                 .header("Authorization", "Bearer " + token)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
@@ -686,5 +697,139 @@ class WalletControllerIntegrationTest {
         assertWalletBalance(source.getId(), "1.00");
         assertWalletBalance(destination.getId(), "99999999999999999.99");
         assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void repeatedDepositShouldCreditOnlyOnce() throws Exception {
+        Wallet wallet = createMoneyTestWallet("repeat@test.com", "0.00");
+        String token = jwtService.generateAccessToken(wallet.getUser().getEmail());
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                .andExpect(status().isOk());
+        mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("DUPLICATE_TRANSACTION"));
+
+        assertWalletBalance(wallet.getId(), "25.00");
+        assertEquals(1L, transactionRepository.count());
+    }
+
+    @Test
+    void depositShouldRejectKeyReusedForDifferentAmount() throws Exception {
+        Wallet wallet = createMoneyTestWallet("different-amount@test.com", "0.00");
+        String token = jwtService.generateAccessToken(wallet.getUser().getEmail());
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                .andExpect(status().isOk());
+        mockMvc.perform(depositCall(wallet.getId(), token, key, "30.00"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_PARAMETER"));
+
+        assertWalletBalance(wallet.getId(), "25.00");
+        assertEquals(1L, transactionRepository.count());
+    }
+
+    @Test
+    void depositsWithDifferentKeysShouldBothBeProcessed() throws Exception {
+        Wallet wallet = createMoneyTestWallet("different-keys@test.com", "0.00");
+        String token = jwtService.generateAccessToken(wallet.getUser().getEmail());
+
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(depositCall(wallet.getId(), token,
+                            UUID.randomUUID().toString(), "25.00"))
+                    .andExpect(status().isOk());
+        }
+
+        assertWalletBalance(wallet.getId(), "50.00");
+        assertEquals(2L, transactionRepository.count());
+    }
+
+    @Test
+    void depositShouldRejectMissingOrInvalidKey() throws Exception {
+        Wallet wallet = createMoneyTestWallet("invalid-key@test.com", "0.00");
+        String token = jwtService.generateAccessToken(wallet.getUser().getEmail());
+
+        for (String key : new String[]{null, "", "   ", "x".repeat(256)}) {
+            mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        assertWalletBalance(wallet.getId(), "0.00");
+        assertEquals(0L, transactionRepository.count());
+    }
+
+    @Test
+    void depositShouldRejectKeyUsedForAnotherWallet() throws Exception {
+        Wallet first = createMoneyTestWallet("key-owner-one@test.com", "0.00");
+        Wallet second = createMoneyTestWallet("key-owner-two@test.com", "0.00");
+        String firstToken = jwtService.generateAccessToken(first.getUser().getEmail());
+        String secondToken = jwtService.generateAccessToken(second.getUser().getEmail());
+        String key = UUID.randomUUID().toString();
+
+        mockMvc.perform(depositCall(first.getId(), firstToken, key, "25.00"))
+                .andExpect(status().isOk());
+        mockMvc.perform(depositCall(second.getId(), secondToken, key, "25.00"))
+                .andExpect(status().isBadRequest());
+
+        assertWalletBalance(first.getId(), "25.00");
+        assertWalletBalance(second.getId(), "0.00");
+        assertEquals(1L, transactionRepository.count());
+    }
+
+    @Test
+    void simultaneousDepositsWithSameKeyShouldCreditOnlyOnce() throws Exception {
+        Wallet wallet = createMoneyTestWallet("concurrent-deposit@test.com", "0.00");
+        String token = jwtService.generateAccessToken(wallet.getUser().getEmail());
+        String key = UUID.randomUUID().toString();
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            java.util.concurrent.Callable<Integer> operation = () -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Start timeout");
+                }
+                return mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                        .andReturn().getResponse().getStatus();
+            };
+            var first = executor.submit(operation);
+            var second = executor.submit(operation);
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+
+            int firstStatus = first.get(20, TimeUnit.SECONDS);
+            int secondStatus = second.get(20, TimeUnit.SECONDS);
+            assertTrue(
+                    (firstStatus == 200 && secondStatus == 409)
+                            || (firstStatus == 409 && secondStatus == 200),
+                    "Expected one success and one conflict, got "
+                            + firstStatus + " and " + secondStatus
+            );
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+
+        mockMvc.perform(depositCall(wallet.getId(), token, key, "25.00"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("DUPLICATE_TRANSACTION"));
+        assertWalletBalance(wallet.getId(), "25.00");
+        assertEquals(1L, transactionRepository.count());
+    }
+
+    private MockHttpServletRequestBuilder depositCall(
+            Long walletId, String token, String key, String amount
+    ) {
+        var call = post("/api/wallets/{id}/deposit", walletId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":" + amount + "}");
+        if (key != null) call.header("Idempotency-Key", key);
+        return call;
     }
 }

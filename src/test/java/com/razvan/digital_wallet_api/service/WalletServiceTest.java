@@ -6,6 +6,10 @@ import com.razvan.digital_wallet_api.dto.TransferRequest;
 import com.razvan.digital_wallet_api.dto.WalletResponse;
 import com.razvan.digital_wallet_api.entity.Currency;
 import com.razvan.digital_wallet_api.entity.Transaction;
+import com.razvan.digital_wallet_api.entity.TransactionStatus;
+import com.razvan.digital_wallet_api.entity.TransactionType;
+import org.springframework.dao.DataIntegrityViolationException;
+import java.time.LocalDateTime;
 import com.razvan.digital_wallet_api.entity.User;
 import com.razvan.digital_wallet_api.entity.Wallet;
 import com.razvan.digital_wallet_api.exception.CurrencyMismatchException;
@@ -41,6 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -324,7 +330,8 @@ class WalletServiceTest {
 
         WalletResponse response = walletService.deposit(
                 1L,
-                request
+                request,
+                "deposit-test-key"
         );
 
         assertEquals(
@@ -337,7 +344,7 @@ class WalletServiceTest {
                 response.getBalance()
         );
 
-        verify(transactionRepository).save(any(Transaction.class));
+        verify(transactionRepository).saveAndFlush(any(Transaction.class));
     }
 
     @Test
@@ -353,7 +360,8 @@ class WalletServiceTest {
                 WalletNotFoundException.class,
                 () -> walletService.deposit(
                         999L,
-                        request
+                        request,
+                        "deposit-test-key"
                 )
         );
     }
@@ -447,4 +455,82 @@ class WalletServiceTest {
         );
     }
 
+
+    @Test
+    void depositShouldRejectDuplicateWithoutChangingBalance() {
+        mockAuthenticatedUser();
+        when(walletRepository.findById(1L)).thenReturn(Optional.of(fromWallet));
+        when(transactionRepository.findByIdempotencyKey("same-key"))
+                .thenReturn(Optional.of(completedDeposit("25.00", "same-key")));
+        DepositRequest request = depositRequest("25.00");
+
+        assertThrows(DuplicateTransactionException.class,
+                () -> walletService.deposit(1L, request, "same-key"));
+
+        assertEquals(new BigDecimal("100.00"), fromWallet.getBalance());
+        verify(walletRepository, never()).save(any(Wallet.class));
+        verify(transactionRepository, never()).saveAndFlush(any(Transaction.class));
+    }
+
+    @Test
+    void depositShouldRejectKeyReusedWithDifferentAmount() {
+        mockAuthenticatedUser();
+        when(walletRepository.findById(1L)).thenReturn(Optional.of(fromWallet));
+        when(transactionRepository.findByIdempotencyKey("same-key"))
+                .thenReturn(Optional.of(completedDeposit("25.00", "same-key")));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> walletService.deposit(1L, depositRequest("30.00"), "same-key"));
+
+        assertEquals(new BigDecimal("100.00"), fromWallet.getBalance());
+        verify(walletRepository, never()).save(any(Wallet.class));
+        verify(transactionRepository, never()).saveAndFlush(any(Transaction.class));
+    }
+
+    @Test
+    void depositShouldRejectInvalidKeysBeforeRepositoryAccess() {
+        for (String key : new String[]{null, "", "   ", "x".repeat(256)}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> walletService.deposit(1L, depositRequest("25.00"), key));
+        }
+        verifyNoInteractions(walletRepository, userRepository, transactionRepository);
+    }
+
+    @Test
+    void depositShouldCheckOwnershipBeforeLookingUpKey() {
+        mockAuthenticatedUser();
+        when(walletRepository.findById(2L)).thenReturn(Optional.of(toWallet));
+
+        assertThrows(AccessDeniedException.class,
+                () -> walletService.deposit(2L, depositRequest("25.00"), "same-key"));
+
+        verifyNoInteractions(transactionRepository);
+        assertEquals(new BigDecimal("50.00"), toWallet.getBalance());
+    }
+
+    @Test
+    void depositShouldNotChangeBalanceWhenTransactionInsertFails() {
+        mockAuthenticatedUser();
+        when(walletRepository.findById(1L)).thenReturn(Optional.of(fromWallet));
+        when(transactionRepository.saveAndFlush(any(Transaction.class)))
+                .thenThrow(new DataIntegrityViolationException("Key conflict"));
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> walletService.deposit(1L, depositRequest("25.00"), "same-key"));
+
+        assertEquals(new BigDecimal("100.00"), fromWallet.getBalance());
+        verify(walletRepository, never()).save(any(Wallet.class));
+    }
+
+    private DepositRequest depositRequest(String amount) {
+        DepositRequest request = new DepositRequest();
+        request.setAmount(new BigDecimal(amount));
+        return request;
+    }
+
+    private Transaction completedDeposit(String amount, String key) {
+        return new Transaction(fromWallet, fromWallet, new BigDecimal(amount),
+                Currency.EUR, TransactionType.DEPOSIT, TransactionStatus.COMPLETED,
+                LocalDateTime.now(), key, "Deposit");
+    }
 }

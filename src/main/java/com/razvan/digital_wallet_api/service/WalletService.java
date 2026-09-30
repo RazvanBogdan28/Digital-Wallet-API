@@ -30,7 +30,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 public class WalletService {
@@ -122,7 +121,19 @@ public class WalletService {
     }
 
     @Transactional
-    public WalletResponse deposit(Long walletId, DepositRequest request) {
+    public WalletResponse deposit(
+            Long walletId,
+            DepositRequest request,
+            String idempotencyKey
+    ) {
+        if (idempotencyKey == null
+                || idempotencyKey.isBlank()
+                || idempotencyKey.length() > 255) {
+            throw new IllegalArgumentException(
+                    "Idempotency-Key must contain between 1 and 255 characters"
+            );
+        }
+
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() ->
                         new WalletNotFoundException(
@@ -133,13 +144,35 @@ public class WalletService {
         verifyWalletOwnership(wallet);
 
         BigDecimal amount = validateAmount(request.getAmount());
+
+        var existing =
+                transactionRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existing.isPresent()) {
+            Transaction previous = existing.get();
+
+            boolean sameDeposit =
+                    previous.getType() == TransactionType.DEPOSIT
+                            && previous.getStatus() == TransactionStatus.COMPLETED
+                            && previous.getFromWallet().getId().equals(walletId)
+                            && previous.getToWallet().getId().equals(walletId)
+                            && previous.getCurrency() == wallet.getCurrency()
+                            && previous.getAmount().compareTo(amount) == 0;
+
+            if (!sameDeposit) {
+                throw new IllegalArgumentException(
+                        "Idempotency-Key was already used for a different request"
+                );
+            }
+
+            throw new DuplicateTransactionException(
+                    "Deposit already processed"
+            );
+        }
+
         BigDecimal newBalance = wallet.getBalance().add(amount);
 
         validateBalance(newBalance);
-
-        wallet.setBalance(newBalance);
-
-        Wallet savedWallet = walletRepository.save(wallet);
 
         Transaction transaction = new Transaction(
                 wallet,
@@ -149,11 +182,15 @@ public class WalletService {
                 TransactionType.DEPOSIT,
                 TransactionStatus.COMPLETED,
                 LocalDateTime.now(),
-                UUID.randomUUID().toString(),
+                idempotencyKey,
                 "Deposit"
         );
 
-        transactionRepository.save(transaction);
+        transactionRepository.saveAndFlush(transaction);
+
+        wallet.setBalance(newBalance);
+
+        Wallet savedWallet = walletRepository.save(wallet);
 
         return mapToResponse(savedWallet);
     }

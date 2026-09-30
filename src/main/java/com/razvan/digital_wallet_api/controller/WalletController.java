@@ -165,11 +165,15 @@ public class WalletController {
     public ResponseEntity<WalletResponse> deposit(
             @Parameter(description = "Wallet ID", required = true)
             @PathVariable Long id,
-            @Valid @RequestBody DepositRequest request
+            @Valid @RequestBody DepositRequest request,
+            @Parameter(
+                    description = "Unique key for this deposit; reuse it on retries",
+                    required = true
+            )
+            @RequestHeader("Idempotency-Key") String idempotencyKey
     ) {
-
         return ResponseEntity.ok(
-                walletService.deposit(id, request)
+                walletService.deposit(id, request, idempotencyKey)
         );
     }
 
