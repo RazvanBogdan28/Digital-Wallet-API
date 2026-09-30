@@ -1,5 +1,6 @@
 package com.razvan.digital_wallet_api.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.razvan.digital_wallet_api.entity.Currency;
 
 import java.math.BigDecimal;
@@ -10,7 +11,10 @@ public class TransactionResponse {
     private Long id;
     private Long fromWalletId;
     private Long toWalletId;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private BigDecimal amount;
+
     private Currency currency;
     private String type;
     private String status;
@@ -70,6 +74,7 @@ public class TransactionResponse {
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
+
     public String getDescription() {
         return description;
     }

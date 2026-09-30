@@ -1019,4 +1019,71 @@ class WalletControllerIntegrationTest {
         assertEquals(0L, walletRepository.count());
         assertEquals(0L, transactionRepository.count());
     }
+    @Test
+    void walletResponseShouldPreserveMaximumBalanceAsString()
+            throws Exception {
+        String maximum = "99999999999999999.99";
+
+        Wallet wallet = createMoneyTestWallet(
+                "exact-wallet-balance@test.com", maximum
+        );
+
+        String token = jwtService.generateAccessToken(
+                wallet.getUser().getEmail()
+        );
+
+        mockMvc.perform(
+                        get("/api/wallets/{id}", wallet.getId())
+                                .header("Authorization", "Bearer " + token)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.balance").isString())
+                .andExpect(jsonPath("$.balance").value(maximum));
+    }
+
+    @Test
+    void depositAndHistoryShouldPreserveMaximumAmountAsString()
+            throws Exception {
+        String maximum = "99999999999999999.99";
+
+        Wallet wallet = createMoneyTestWallet(
+                "exact-deposit-amount@test.com", "0.00"
+        );
+
+        String token = jwtService.generateAccessToken(
+                wallet.getUser().getEmail()
+        );
+
+        mockMvc.perform(
+                        post("/api/wallets/{id}/deposit", wallet.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .header(
+                                        "Idempotency-Key",
+                                        UUID.randomUUID().toString()
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "amount": "%s"
+                                        }
+                                        """.formatted(maximum))
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.balance").isString())
+                .andExpect(jsonPath("$.balance").value(maximum));
+
+        mockMvc.perform(
+                        get("/api/transactions/wallet/{id}", wallet.getId())
+                                .header("Authorization", "Bearer " + token)
+                                .param("page", "0")
+                                .param("size", "10")
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].amount").isString())
+                .andExpect(jsonPath("$.content[0].amount").value(maximum));
+
+        assertWalletBalance(wallet.getId(), maximum);
+        assertEquals(1L, transactionRepository.count());
+    }
 }
