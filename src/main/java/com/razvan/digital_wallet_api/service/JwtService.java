@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -23,19 +24,11 @@ public class JwtService {
     private long refreshExpiration;
 
     public String generateAccessToken(String email) {
-        return generateToken(
-                email,
-                expiration,
-                "ACCESS"
-        );
+        return generateToken(email, expiration, "ACCESS");
     }
 
     public String generateRefreshToken(String email) {
-        return generateToken(
-                email,
-                refreshExpiration,
-                "REFRESH"
-        );
+        return generateToken(email, refreshExpiration, "REFRESH");
     }
 
     private String generateToken(
@@ -43,12 +36,12 @@ public class JwtService {
             long expirationTime,
             String tokenType
     ) {
-
         Date now = new Date();
         Date expirationDate =
                 new Date(now.getTime() + expirationTime);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(email)
                 .claim("tokenType", tokenType)
                 .issuedAt(now)
@@ -62,7 +55,6 @@ public class JwtService {
     }
 
     public boolean isTokenValid(String token, String email) {
-
         String tokenEmail = extractEmail(token);
 
         return tokenEmail.equals(email)
@@ -76,7 +68,6 @@ public class JwtService {
     }
 
     private Claims extractAllClaims(String token) {
-
         return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
@@ -85,7 +76,6 @@ public class JwtService {
     }
 
     private SecretKey getSigningKey() {
-
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
 
         return Keys.hmacShaKeyFor(keyBytes);
