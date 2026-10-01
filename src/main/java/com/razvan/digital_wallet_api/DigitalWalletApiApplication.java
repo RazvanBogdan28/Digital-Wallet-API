@@ -1,6 +1,7 @@
 package com.razvan.digital_wallet_api;
 
 import com.razvan.digital_wallet_api.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -31,7 +32,6 @@ public class DigitalWalletApiApplication {
 
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
-
         CorsConfiguration configuration = new CorsConfiguration();
 
         configuration.setAllowedOrigins(
@@ -96,6 +96,9 @@ public class DigitalWalletApiApplication {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+                        // Allows Spring to return the original error response.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         .requestMatchers(
