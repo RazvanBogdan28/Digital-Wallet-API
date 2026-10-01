@@ -26,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.Instant;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -185,7 +186,7 @@ public class WalletService {
                 wallet.getCurrency(),
                 TransactionType.DEPOSIT,
                 TransactionStatus.COMPLETED,
-                LocalDateTime.now(),
+                Instant.now(),
                 idempotencyKey,
                 "Deposit"
         );
@@ -304,7 +305,7 @@ public class WalletService {
                 fromWallet.getCurrency(),
                 TransactionType.TRANSFER,
                 TransactionStatus.COMPLETED,
-                LocalDateTime.now(),
+                Instant.now(),
                 idempotencyKey,
                 request.getDescription()
         );

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.razvan.digital_wallet_api.entity.Currency;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public class TransactionResponse {
 
@@ -18,7 +18,10 @@ public class TransactionResponse {
     private Currency currency;
     private String type;
     private String status;
-    private LocalDateTime createdAt;
+
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Instant createdAt;
+
     private String description;
 
     public TransactionResponse(
@@ -29,9 +32,9 @@ public class TransactionResponse {
             Currency currency,
             String type,
             String status,
-            LocalDateTime createdAt,
-            String description) {
-
+            Instant createdAt,
+            String description
+    ) {
         this.id = id;
         this.fromWalletId = fromWalletId;
         this.toWalletId = toWalletId;
@@ -71,7 +74,7 @@ public class TransactionResponse {
         return status;
     }
 
-    public LocalDateTime getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
 

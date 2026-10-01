@@ -9,7 +9,7 @@ import com.razvan.digital_wallet_api.entity.Transaction;
 import com.razvan.digital_wallet_api.entity.TransactionStatus;
 import com.razvan.digital_wallet_api.entity.TransactionType;
 import org.springframework.dao.DataIntegrityViolationException;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import com.razvan.digital_wallet_api.entity.User;
 import com.razvan.digital_wallet_api.entity.Wallet;
 import com.razvan.digital_wallet_api.exception.CurrencyMismatchException;
@@ -273,7 +273,7 @@ class WalletServiceTest {
                 Currency.EUR,
                 TransactionType.TRANSFER,
                 TransactionStatus.COMPLETED,
-                LocalDateTime.now(),
+                Instant.now(),
                 "duplicate-key",
                 null
         );
@@ -548,7 +548,7 @@ class WalletServiceTest {
     private Transaction completedDeposit(String amount, String key) {
         return new Transaction(fromWallet, fromWallet, new BigDecimal(amount),
                 Currency.EUR, TransactionType.DEPOSIT, TransactionStatus.COMPLETED,
-                LocalDateTime.now(), key, "Deposit");
+                Instant.now(), key, "Deposit");
     }
     @Test
     void getWalletsByUserIdShouldAllowOwner() {
@@ -633,7 +633,7 @@ class WalletServiceTest {
                 Currency.EUR,
                 TransactionType.TRANSFER,
                 TransactionStatus.COMPLETED,
-                LocalDateTime.now(),
+                Instant.now(),
                 "used-key",
                 null
         );

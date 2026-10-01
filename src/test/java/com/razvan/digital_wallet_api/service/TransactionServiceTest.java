@@ -29,7 +29,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -121,7 +121,7 @@ class TransactionServiceTest {
                 Currency.EUR,
                 TransactionType.TRANSFER,
                 TransactionStatus.COMPLETED,
-                LocalDateTime.now(),
+                Instant.now(),
                 "test-key",
                 "Test transfer"
         );

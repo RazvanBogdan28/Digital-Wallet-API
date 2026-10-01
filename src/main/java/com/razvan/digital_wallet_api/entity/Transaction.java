@@ -3,7 +3,7 @@ package com.razvan.digital_wallet_api.entity;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "transactions")
@@ -36,8 +36,8 @@ public class Transaction {
     @Column(nullable = false)
     private TransactionStatus status;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
 
     @Column(name = "idempotency_key", nullable = false, unique = true)
     private String idempotencyKey;
@@ -55,10 +55,10 @@ public class Transaction {
             Currency currency,
             TransactionType type,
             TransactionStatus status,
-            LocalDateTime createdAt,
+            Instant createdAt,
             String idempotencyKey,
-            String description) {
-
+            String description
+    ) {
         this.fromWallet = fromWallet;
         this.toWallet = toWallet;
         this.amount = amount;
@@ -98,12 +98,14 @@ public class Transaction {
         return status;
     }
 
-    public LocalDateTime getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
+
     public String getIdempotencyKey() {
         return idempotencyKey;
     }
+
     public String getDescription() {
         return description;
     }
