@@ -166,8 +166,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidRequest(
-            HttpMessageNotReadableException ex) {
-
+            HttpMessageNotReadableException ex
+    ) {
         Map<String, Object> error = new HashMap<>();
 
         error.put("timestamp", LocalDateTime.now());
@@ -175,7 +175,7 @@ public class GlobalExceptionHandler {
         error.put("error", "INVALID_REQUEST");
         error.put(
                 "message",
-                "Invalid request. Currency must be one of: EUR, USD, RON"
+                "Invalid request body. Check the JSON syntax and field values."
         );
 
         return ResponseEntity
