@@ -205,10 +205,12 @@ public class WalletService {
             TransferRequest request,
             String idempotencyKey
     ) {
-        if (transactionRepository.findByIdempotencyKey(idempotencyKey)
-                .isPresent()) {
-            throw new DuplicateTransactionException(
-                    "Transfer already processed"
+        if (idempotencyKey == null
+                || idempotencyKey.isBlank()
+                || idempotencyKey.length() > 255) {
+
+            throw new IllegalArgumentException(
+                    "Idempotency-Key must contain between 1 and 255 characters"
             );
         }
 
@@ -220,6 +222,39 @@ public class WalletService {
                 );
 
         verifyWalletOwnership(fromWallet);
+
+        BigDecimal amount = validateAmount(request.getAmount());
+
+        var existing =
+                transactionRepository.findByIdempotencyKey(idempotencyKey);
+
+        if (existing.isPresent()) {
+            Transaction previous = existing.get();
+
+            boolean sameTransfer =
+                    previous.getType() == TransactionType.TRANSFER
+                            && previous.getStatus() == TransactionStatus.COMPLETED
+                            && previous.getFromWallet().getId()
+                            .equals(fromWalletId)
+                            && previous.getToWallet().getId()
+                            .equals(request.getToWalletId())
+                            && previous.getCurrency() == fromWallet.getCurrency()
+                            && previous.getAmount().compareTo(amount) == 0
+                            && java.util.Objects.equals(
+                            previous.getDescription(),
+                            request.getDescription()
+                    );
+
+            if (!sameTransfer) {
+                throw new IllegalArgumentException(
+                        "Idempotency-Key was already used for a different request"
+                );
+            }
+
+            throw new DuplicateTransactionException(
+                    "Transfer already processed"
+            );
+        }
 
         Wallet toWallet = walletRepository.findById(request.getToWalletId())
                 .orElseThrow(() ->
@@ -240,8 +275,6 @@ public class WalletService {
                     "Wallet currencies must match"
             );
         }
-
-        BigDecimal amount = validateAmount(request.getAmount());
 
         if (fromWallet.getBalance().compareTo(amount) < 0) {
             throw new InsufficientFundsException(

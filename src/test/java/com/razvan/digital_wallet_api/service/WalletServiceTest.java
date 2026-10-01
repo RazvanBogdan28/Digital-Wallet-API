@@ -262,25 +262,40 @@ class WalletServiceTest {
 
     @Test
     void transferShouldThrowExceptionWhenIdempotencyKeyAlreadyExists() {
-
         TransferRequest request = new TransferRequest();
         request.setToWalletId(2L);
         request.setAmount(new BigDecimal("10.00"));
 
-        when(transactionRepository
-                .findByIdempotencyKey("duplicate-key"))
-                .thenReturn(Optional.of(
-                        org.mockito.Mockito.mock(Transaction.class)
-                ));
+        Transaction previous = new Transaction(
+                fromWallet,
+                toWallet,
+                new BigDecimal("10.00"),
+                Currency.EUR,
+                TransactionType.TRANSFER,
+                TransactionStatus.COMPLETED,
+                LocalDateTime.now(),
+                "duplicate-key",
+                null
+        );
+
+        when(walletRepository.findById(1L))
+                .thenReturn(Optional.of(fromWallet));
+
+        mockAuthenticatedUser();
+
+        when(transactionRepository.findByIdempotencyKey("duplicate-key"))
+                .thenReturn(Optional.of(previous));
 
         assertThrows(
                 DuplicateTransactionException.class,
-                () -> walletService.transfer(
-                        1L,
-                        request,
-                        "duplicate-key"
-                )
+                () -> walletService.transfer(1L, request, "duplicate-key")
         );
+
+        assertEquals(new BigDecimal("100.00"), fromWallet.getBalance());
+        assertEquals(new BigDecimal("50.00"), toWallet.getBalance());
+
+        verify(walletRepository, never()).save(any(Wallet.class));
+        verify(transactionRepository, never()).save(any(Transaction.class));
     }
 
     @Test
@@ -582,5 +597,64 @@ class WalletServiceTest {
         );
 
         verify(walletRepository, never()).findByUserId(2L);
+    }
+    @Test
+    void transferShouldRejectInvalidKeysBeforeRepositoryAccess() {
+        TransferRequest request = new TransferRequest();
+        request.setToWalletId(2L);
+        request.setAmount(new BigDecimal("25.00"));
+
+        String[] invalidKeys = { null, "", "   ", "x".repeat(256) };
+
+        for (String key : invalidKeys) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> walletService.transfer(1L, request, key)
+            );
+        }
+
+        verifyNoInteractions(
+                walletRepository,
+                userRepository,
+                transactionRepository
+        );
+    }
+
+    @Test
+    void transferShouldRejectKeyReusedWithDifferentAmount() {
+        TransferRequest request = new TransferRequest();
+        request.setToWalletId(2L);
+        request.setAmount(new BigDecimal("25.00"));
+
+        Transaction previous = new Transaction(
+                fromWallet,
+                toWallet,
+                new BigDecimal("10.00"),
+                Currency.EUR,
+                TransactionType.TRANSFER,
+                TransactionStatus.COMPLETED,
+                LocalDateTime.now(),
+                "used-key",
+                null
+        );
+
+        when(walletRepository.findById(1L))
+                .thenReturn(Optional.of(fromWallet));
+
+        mockAuthenticatedUser();
+
+        when(transactionRepository.findByIdempotencyKey("used-key"))
+                .thenReturn(Optional.of(previous));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> walletService.transfer(1L, request, "used-key")
+        );
+
+        assertEquals(new BigDecimal("100.00"), fromWallet.getBalance());
+        assertEquals(new BigDecimal("50.00"), toWallet.getBalance());
+
+        verify(walletRepository, never()).save(any(Wallet.class));
+        verify(transactionRepository, never()).save(any(Transaction.class));
     }
 }
