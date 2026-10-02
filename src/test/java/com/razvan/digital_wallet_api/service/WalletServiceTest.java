@@ -361,6 +361,9 @@ class WalletServiceTest {
         DepositRequest request = new DepositRequest();
         request.setAmount(new BigDecimal("25.00"));
 
+        when(walletRepository.findOwnerIdById(1L))
+                .thenReturn(Optional.of(user1.getId()));
+
         when(walletRepository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(fromWallet));
 
@@ -394,7 +397,7 @@ class WalletServiceTest {
         DepositRequest request = new DepositRequest();
         request.setAmount(new BigDecimal("25.00"));
 
-        when(walletRepository.findByIdForUpdate(999L))
+        when(walletRepository.findOwnerIdById(999L))
                 .thenReturn(Optional.empty());
 
         assertThrows(
@@ -494,6 +497,9 @@ class WalletServiceTest {
     void depositShouldRejectDuplicateWithoutChangingBalance() {
         mockAuthenticatedUser();
 
+        when(walletRepository.findOwnerIdById(1L))
+                .thenReturn(Optional.of(user1.getId()));
+
         when(walletRepository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(fromWallet));
 
@@ -524,6 +530,9 @@ class WalletServiceTest {
     @Test
     void depositShouldRejectKeyReusedWithDifferentAmount() {
         mockAuthenticatedUser();
+
+        when(walletRepository.findOwnerIdById(1L))
+                .thenReturn(Optional.of(user1.getId()));
 
         when(walletRepository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(fromWallet));
@@ -585,8 +594,8 @@ class WalletServiceTest {
     void depositShouldCheckOwnershipBeforeLookingUpKey() {
         mockAuthenticatedUser();
 
-        when(walletRepository.findByIdForUpdate(2L))
-                .thenReturn(Optional.of(toWallet));
+        when(walletRepository.findOwnerIdById(2L))
+                .thenReturn(Optional.of(user2.getId()));
 
         assertThrows(
                 AccessDeniedException.class,
@@ -596,6 +605,9 @@ class WalletServiceTest {
                         "same-key"
                 )
         );
+
+        verify(walletRepository, never())
+                .findByIdForUpdate(any(Long.class));
 
         verifyNoInteractions(transactionRepository);
 
@@ -608,6 +620,9 @@ class WalletServiceTest {
     @Test
     void depositShouldNotChangeBalanceWhenTransactionInsertFails() {
         mockAuthenticatedUser();
+
+        when(walletRepository.findOwnerIdById(1L))
+                .thenReturn(Optional.of(user1.getId()));
 
         when(walletRepository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(fromWallet));

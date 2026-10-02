@@ -129,12 +129,23 @@ public class WalletService {
             );
         }
 
-        Wallet wallet = walletRepository.findByIdForUpdate(walletId)
+        Long ownerId = walletRepository.findOwnerIdById(walletId)
                 .orElseThrow(() -> new WalletNotFoundException(
                         "Wallet not found with id: " + walletId
                 ));
 
-        verifyWalletOwnership(wallet);
+        User authenticatedUser = getAuthenticatedUser();
+
+        if (!ownerId.equals(authenticatedUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have access to this wallet"
+            );
+        }
+
+        Wallet wallet = walletRepository.findByIdForUpdate(walletId)
+                .orElseThrow(() -> new WalletNotFoundException(
+                        "Wallet not found with id: " + walletId
+                ));
 
         BigDecimal amount = validateAmount(request.getAmount());
 
@@ -200,7 +211,6 @@ public class WalletService {
             );
         }
 
-        // Verificăm proprietarul fără să încărcăm soldul înainte de blocare.
         Long ownerId = walletRepository.findOwnerIdById(fromWalletId)
                 .orElseThrow(() -> new WalletNotFoundException(
                         "Source wallet not found with id: " + fromWalletId
@@ -224,7 +234,6 @@ public class WalletService {
 
         BigDecimal amount = validateAmount(request.getAmount());
 
-        // Toate transferurile blochează portofelele în ordinea ID-urilor.
         Long lowerId = Math.min(fromWalletId, toWalletId);
         Long higherId = Math.max(fromWalletId, toWalletId);
 
