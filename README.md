@@ -30,8 +30,9 @@ A companion React frontend consumes this API — see [Frontend](#frontend) below
 - Wallet-to-wallet transfers
 - Paginated transaction history
 - Wallet ownership validation
-- Idempotent transfers using `Idempotency-Key`
-- Optimistic locking
+- Idempotent deposits and transfers using `Idempotency-Key`
+- Consistent wallet balance and transaction snapshots
+- Wallet row locking in a consistent order, with JPA versioning
 - Request validation
 - Global exception handling
 - Database migrations with Flyway
@@ -66,20 +67,7 @@ A companion React frontend consumes this API — see [Frontend](#frontend) below
 
 ![Digital Wallet API Architecture](docs/architecture.png)
 
-The application follows a layered architecture:
-
-```text
-Controller
-    |
-    v
-Service
-    |
-    v
-Repository
-    |
-    v
-PostgreSQL
-```
+Controllers handle HTTP requests, services enforce business rules, and repositories persist data in PostgreSQL.
 
 ### Main packages
 
@@ -154,7 +142,9 @@ Example request:
 }
 ```
 
-Returns `201 Created` with the new user (`id`, `firstName`, `lastName`, `email`). New accounts get the `USER` role.
+Returns `201 Created` with the new user (`id`, `firstName`, `lastName`, `email`). Passwords are excluded from responses. New accounts get the `USER` role.
+
+Email addresses are matched without case sensitivity and surrounding whitespace. New addresses are stored trimmed and lowercase; the database enforces uniqueness on normalized addresses.
 
 ### Login
 
@@ -194,32 +184,48 @@ Authorization: Bearer <access-token>
 POST /api/auth/refresh
 ```
 
+Both refresh and logout accept this JSON body:
+
+```json
+{
+  "refreshToken": "<refresh-token>"
+}
+```
+
+Refresh returns `200 OK` with a new access token:
+
+```json
+{
+  "accessToken": "<new-access-token>"
+}
+```
+
+The stored refresh-token expiry is derived from the token's expiration claim, using the configured refresh lifetime.
+
 ### Logout
 
 ```http
 POST /api/auth/logout
 ```
 
-Logout revokes the supplied refresh token.
+Logout returns `204 No Content` and revokes the supplied refresh token. An already issued access token remains valid until its expiration.
 
 ## Authorization
 
-The application supports role-based authorization:
+The application supports `USER` and `ADMIN` roles.
 
-```text
-USER
-ADMIN
-```
+| Endpoint | Access |
+| --- | --- |
+| `POST /api/users` | Public registration |
+| `POST /api/auth/login`, `/refresh`, `/logout` | Public routes; refresh/logout validate the supplied refresh token |
+| `GET /api/users` | ADMIN |
+| `GET /api/users/{id}` | Own profile or ADMIN |
+| `GET /api/wallets/user/{userId}` | Own wallets or ADMIN |
+| `GET /api/wallets/{id}` | Wallet owner |
+| Wallet creation, deposits and transfers | Owner of the account or source wallet |
+| Transaction history and snapshot endpoints | Wallet owner |
 
-For example:
-
-```http
-GET /api/users
-```
-
-is restricted to users with the `ADMIN` role, enforced in the service layer so the check applies consistently regardless of how the request reaches the controller.
-
-Wallet operations also enforce ownership rules so users cannot access or modify wallets belonging to other users.
+ADMIN access to another user's wallet list does not grant permission to deposit into or transfer from that user's wallet. A transfer recipient may belong to another user, but both wallets must use the same currency.
 
 ## Wallet Endpoints
 
@@ -228,6 +234,17 @@ Wallet operations also enforce ownership rules so users cannot access or modify 
 ```http
 POST /api/wallets
 ```
+
+Example creation body:
+
+```json
+{
+  "userId": 1,
+  "currency": "EUR"
+}
+```
+
+Returns `201 Created`. A user can have only one wallet per supported currency.
 
 ### Get Wallet
 
@@ -247,13 +264,30 @@ GET /api/wallets/user/{userId}
 POST /api/wallets/{id}/deposit
 ```
 
+Deposits require both authentication and an idempotency key:
+
+```http
+POST /api/wallets/1/deposit
+Authorization: Bearer <access-token>
+Idempotency-Key: 38e17f2b-743e-4484-9705-1eab9371453f
+Content-Type: application/json
+```
+
+```json
+{
+  "amount": "100.00"
+}
+```
+
+Returns `200 OK` with the updated wallet, including its balance as a decimal string.
+
 ### Transfer
 
 ```http
 POST /api/wallets/{id}/transfer
 ```
 
-Transfers require an idempotency header:
+Transfers also require an idempotency header:
 
 ```http
 Idempotency-Key: unique-value
@@ -273,7 +307,7 @@ Content-Type: application/json
 ```json
 {
   "toWalletId": 2,
-  "amount": 25.00,
+  "amount": "25.00",
   "description": "Dinner split"
 }
 ```
@@ -285,32 +319,95 @@ Successful response (the updated source wallet):
   "id": 1,
   "userId": 1,
   "currency": "EUR",
-  "balance": 75.00
+  "balance": "75.00"
 }
 ```
 
 ## Transaction History
 
 ```http
-GET /api/transactions/wallet/{walletId}
+GET /api/transactions/wallet/1?page=0&size=10
+Authorization: Bearer <access-token>
 ```
 
-Pagination parameters:
+`page` starts at `0`. `size` defaults to `10` and must be between `1` and `100`.
 
-```text
-page=0
-size=10
+Transactions are ordered by `createdAt DESC, id DESC`, including a deterministic tie-breaker for matching timestamps. The response contains `content`, `totalElements`, `totalPages` and the Spring Data pagination metadata.
+
+Example transaction in `content`:
+
+```json
+{
+  "id": 2,
+  "fromWalletId": 1,
+  "toWalletId": 2,
+  "amount": "25.00",
+  "currency": "EUR",
+  "type": "TRANSFER",
+  "status": "COMPLETED",
+  "createdAt": "2026-10-02T18:30:00Z",
+  "description": "Dinner split"
+}
 ```
 
-Example:
+Separate pagination requests read the current history. New transactions can shift page boundaries between requests; pagination does not freeze the history across an entire browsing session.
+
+### Wallet and recent transactions snapshot
 
 ```http
-GET /api/transactions/wallet/1?page=0&size=10
+GET /api/transactions/wallet/1/window?size=100
+Authorization: Bearer <access-token>
 ```
+
+`size` defaults to `100` and must be between `1` and `100`.
+
+```json
+{
+  "wallet": {
+    "id": 1,
+    "userId": 1,
+    "currency": "EUR",
+    "balance": "75.00"
+  },
+  "items": [
+    {
+      "id": 2,
+      "fromWalletId": 1,
+      "toWalletId": 2,
+      "amount": "25.00",
+      "currency": "EUR",
+      "type": "TRANSFER",
+      "status": "COMPLETED",
+      "createdAt": "2026-10-02T18:30:00Z",
+      "description": "Dinner split"
+    },
+    {
+      "id": 1,
+      "fromWalletId": 1,
+      "toWalletId": 1,
+      "amount": "100.00",
+      "currency": "EUR",
+      "type": "DEPOSIT",
+      "status": "COMPLETED",
+      "createdAt": "2026-10-02T18:00:00Z",
+      "description": null
+    }
+  ],
+  "totalElements": 2,
+  "complete": true,
+  "snapshotAt": "2026-10-02T18:35:00Z"
+}
+```
+
+The wallet, recent transactions and count are read within one PostgreSQL `REPEATABLE_READ` transaction. This prevents the chart from combining a balance and transaction window from different database states.
+
+`items` contains the newest transactions in the same order as history. `complete` is true when all transactions fit in the returned window. With an incomplete window, the balance before its oldest transaction may be nonzero.
+
+`snapshotAt` is the UTC application timestamp recorded when the read begins; it is not a reusable database snapshot identifier. Transaction `createdAt` timestamps also include a UTC offset (`Z`), allowing clients to display local time correctly.
 
 ## Error Handling
 
-The API uses centralized exception handling and returns structured error responses.
+Business and validation exceptions use centralized handling and structured error responses. Security-filter and framework-generated errors may use a different response body; clients should also inspect the HTTP status.
 
 Handled situations include:
 
@@ -324,6 +421,8 @@ Handled situations include:
 - currency mismatch
 - duplicate transaction
 - concurrent modification
+- database integrity conflicts
+- missing or invalid idempotency keys
 - unauthorized access
 - forbidden wallet access
 
@@ -352,29 +451,40 @@ Flyway automatically applies migrations when the application starts.
 
 ## Money Handling
 
-Monetary amounts use `BigDecimal` in the application and `NUMERIC(19, 2)` columns in PostgreSQL, so no floating-point rounding errors occur. Transfers are only allowed between wallets with the same currency; a mismatch is rejected with a structured error.
+Monetary values use Java `BigDecimal` and PostgreSQL `NUMERIC(19, 2)`.
 
-## Optimistic Locking
+**Response `amount` and `balance` fields are decimal strings**, such as `"25.00"`, rather than JSON numbers. Clients should preserve these strings and use decimal arithmetic or integer cents for calculations, instead of converting money to floating-point numbers.
 
-Wallet balances use optimistic locking to reduce the risk of concurrent updates overwriting each other.
+Requests accept decimal strings or JSON numbers. Decimal strings are recommended when the client must preserve the exact amount. Amounts must be positive, have at most two decimal places, and fit the database range: `0.01` to `99999999999999999.99`. Resulting wallet balances must also fit the database range.
 
-The wallet entity uses a version field managed by JPA.
+Transfers require matching currencies. No currency conversion is performed.
 
-Concurrent modification conflicts are handled by the API and returned as an HTTP conflict response.
+## Concurrency and Transactions
+
+Deposits and transfers execute inside database transactions so balance updates and the transaction record commit or roll back together.
+
+Money operations lock wallet rows before changing balances. Transfers acquire locks in ascending wallet ID order, including transfers in opposite directions. Deposits use the same wallet row-locking mechanism. This avoids opposite lock ordering for these operations.
+
+Wallets also retain a JPA `@Version` field. Concurrent modification and integrity conflicts are reported through the API. Clients should handle conflicts and retry ambiguous operations using the original idempotency key.
 
 ## Idempotency
 
-Transfers support idempotency through the:
+**Both deposits and transfers require `Idempotency-Key`.** The key must be nonblank and no longer than 255 characters. Keys are unique across transactions, including deposits, transfers and different wallets.
 
-```http
-Idempotency-Key
-```
+Generate a fresh UUID for each **new logical operation**. If its response is lost or its outcome is unknown, reuse the same key, endpoint and request values. Do not generate a new key just because the first request timed out or returned a server error.
 
-header.
+| Situation | Response and client action |
+| --- | --- |
+| New valid operation | `200 OK` with the updated wallet |
+| Completed operation retried with the same key and matching values | `409 DUPLICATE_TRANSACTION`; no new operation is performed. Refresh the wallet and history. |
+| Same key reused with different operation values | `400 INVALID_PARAMETER`; do not reuse the key for another operation. |
+| Missing, blank or oversized key | `400 Bad Request`; correct the header. |
+| Concurrent key uniqueness conflict | May return `409 DATA_INTEGRITY_CONFLICT`. This does not itself confirm completion; retry the identical operation with its original key to determine the outcome. |
+| Lost connection, timeout or server error | Treat the outcome as unknown and retry with the original key and request. |
 
-Reusing the same key prevents duplicate financial operations. This is especially important when clients retry requests because of network failures.
+A duplicate retry returns a conflict, not a replay of the original success response. Normal authentication and ownership checks still apply.
 
-If a key has already been used, the API does not process the transfer again and returns `409 Conflict` with the error code `DUPLICATE_TRANSACTION`. Keys are unique across the whole system, so clients should generate a fresh UUID per transfer attempt (the frontend does this automatically).
+The frontend retains unresolved operation details and keys in `sessionStorage` for the current tab, allowing the same operation to be retried after a page reload. Closing the dialog does not cancel a request already sent. Closing the tab can discard this recovery state.
 
 ## Swagger / OpenAPI
 
@@ -396,7 +506,9 @@ Local OpenAPI definition:
 http://localhost:8080/v3/api-docs
 ```
 
-Swagger supports JWT authentication through the **Authorize** button.
+Swagger uses a relative server URL, so local Swagger sends requests to the local application and deployed Swagger sends requests to its own host.
+
+Swagger supports JWT authentication through the **Authorize** button. The local application must be running before its Swagger URL can be opened.
 
 ## Frontend
 
@@ -405,7 +517,7 @@ A React + Vite single-page client for this API lives in a separate repository:
 - **Repo:** https://github.com/RazvanBogdan28/Digital-Wallet-Frontend
 - **Live app:** https://digitalwalletfrontend.vercel.app
 
-It covers registration, sign in, wallet management, deposits, transfers and transaction history, with silent access-token refresh and UI states that reflect the API's ownership and role checks (e.g. a dedicated "no access" view on a `403`, rather than a generic error).
+It covers registration, sign in, wallet management, deposits, transfers and transaction history. It uses a shared access-token refresh request, preserves the session after transient refresh failures, and offers retries for failed data loads. The balance chart uses the wallet snapshot endpoint and exact decimal strings for displayed amounts.
 
 ## Running with Docker
 
@@ -445,7 +557,7 @@ Stop the containers with:
 docker compose down
 ```
 
-To also remove the PostgreSQL volume:
+To also remove the PostgreSQL volume **and its stored database data**:
 
 ```bash
 docker compose down -v
@@ -478,6 +590,8 @@ Default database configuration:
 ```text
 jdbc:postgresql://localhost:5432/digital_wallet
 ```
+
+Set the variables in the shell or IDE run configuration. A `.env` file is read by Docker Compose; it is not automatically loaded by `spring-boot:run`.
 
 Run the application with:
 
@@ -513,9 +627,12 @@ The project includes:
 - authentication tests
 - authorization tests
 - ownership tests
+- idempotency and request validation tests
+- simultaneous money-operation tests
+- stable history ordering and consistent wallet snapshot tests
 - PostgreSQL integration tests using Testcontainers
 
-Testcontainers starts an isolated PostgreSQL container for integration testing.
+Testcontainers starts an isolated PostgreSQL container for integration testing. Docker must be running before starting the integration tests.
 
 ## CI/CD and Deployment
 
