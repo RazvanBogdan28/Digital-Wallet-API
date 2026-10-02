@@ -16,7 +16,6 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI digitalWalletOpenAPI() {
-
         String securitySchemeName = "bearerAuth";
 
         return new OpenAPI()
@@ -25,14 +24,15 @@ public class OpenApiConfig {
                                 .title("Digital Wallet API")
                                 .version("1.0")
                                 .description(
-                                        "REST API for users, wallets, transfers, transactions and authentication"
+                                        "REST API for users, wallets, transfers, "
+                                                + "transactions and authentication"
                                 )
                 )
                 .servers(
                         List.of(
                                 new Server()
-                                        .url("https://digital-wallet-api-production-2f16.up.railway.app")
-                                        .description("Production server")
+                                        .url("/")
+                                        .description("Current server")
                         )
                 )
                 .addSecurityItem(

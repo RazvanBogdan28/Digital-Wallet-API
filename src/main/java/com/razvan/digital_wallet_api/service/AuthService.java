@@ -9,11 +9,12 @@ import com.razvan.digital_wallet_api.entity.User;
 import com.razvan.digital_wallet_api.exception.InvalidCredentialsException;
 import com.razvan.digital_wallet_api.repository.RefreshTokenRepository;
 import com.razvan.digital_wallet_api.repository.UserRepository;
-
+import io.jsonwebtoken.JwtException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Service
 public class AuthService {
@@ -36,7 +37,6 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
-
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() ->
                         new InvalidCredentialsException(
@@ -44,13 +44,10 @@ public class AuthService {
                         )
                 );
 
-        boolean passwordMatches =
-                passwordEncoder.matches(
-                        request.getPassword(),
-                        user.getPassword()
-                );
-
-        if (!passwordMatches) {
+        if (!passwordEncoder.matches(
+                request.getPassword(),
+                user.getPassword()
+        )) {
             throw new InvalidCredentialsException(
                     "Invalid email or password"
             );
@@ -62,13 +59,17 @@ public class AuthService {
         String refreshToken =
                 jwtService.generateRefreshToken(user.getEmail());
 
-        RefreshToken storedRefreshToken =
-                new RefreshToken(
-                        refreshToken,
-                        LocalDateTime.now().plusDays(7),
-                        false,
-                        user
-                );
+        LocalDateTime expiresAt = LocalDateTime.ofInstant(
+                jwtService.extractExpiration(refreshToken).toInstant(),
+                ZoneOffset.UTC
+        );
+
+        RefreshToken storedRefreshToken = new RefreshToken(
+                refreshToken,
+                expiresAt,
+                false,
+                user
+        );
 
         refreshTokenRepository.save(storedRefreshToken);
 
@@ -83,7 +84,6 @@ public class AuthService {
     public RefreshTokenResponse refreshToken(
             RefreshTokenRequest request
     ) {
-
         String refreshToken = request.getRefreshToken();
 
         RefreshToken storedRefreshToken =
@@ -94,28 +94,16 @@ public class AuthService {
                                 )
                         );
 
-        if (storedRefreshToken.isRevoked()) {
+        if (storedRefreshToken.isRevoked()
+                || !storedRefreshToken.getExpiresAt().isAfter(
+                LocalDateTime.now(ZoneOffset.UTC)
+        )) {
             throw new InvalidCredentialsException(
                     "Invalid refresh token"
             );
         }
 
-        if (storedRefreshToken.getExpiresAt()
-                .isBefore(LocalDateTime.now())) {
-
-            throw new InvalidCredentialsException(
-                    "Invalid refresh token"
-            );
-        }
-
-        if (!jwtService.isRefreshToken(refreshToken)) {
-            throw new InvalidCredentialsException(
-                    "Invalid refresh token"
-            );
-        }
-
-        String email =
-                jwtService.extractEmail(refreshToken);
+        String email = validateRefreshToken(refreshToken);
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() ->
@@ -124,30 +112,48 @@ public class AuthService {
                         )
                 );
 
-        if (!jwtService.isTokenValid(
-                refreshToken,
-                user.getEmail()
-        )) {
+        if (!storedRefreshToken.getUser().getId().equals(user.getId())) {
             throw new InvalidCredentialsException(
                     "Invalid refresh token"
             );
         }
 
         String newAccessToken =
-                jwtService.generateAccessToken(
-                        user.getEmail()
-                );
+                jwtService.generateAccessToken(user.getEmail());
 
-        return new RefreshTokenResponse(
-                newAccessToken
-        );
+        return new RefreshTokenResponse(newAccessToken);
     }
+
+    private String validateRefreshToken(String token) {
+        try {
+            if (!jwtService.isRefreshToken(token)) {
+                throw new InvalidCredentialsException(
+                        "Invalid refresh token"
+                );
+            }
+
+            String email = jwtService.extractEmail(token);
+
+            if (email == null
+                    || email.isBlank()
+                    || !jwtService.isTokenValid(token, email)) {
+                throw new InvalidCredentialsException(
+                        "Invalid refresh token"
+                );
+            }
+
+            return email;
+        } catch (JwtException | IllegalArgumentException ex) {
+            throw new InvalidCredentialsException(
+                    "Invalid refresh token"
+            );
+        }
+    }
+
     public void logout(RefreshTokenRequest request) {
-
-        String refreshToken = request.getRefreshToken();
-
         RefreshToken storedRefreshToken =
-                refreshTokenRepository.findByToken(refreshToken)
+                refreshTokenRepository
+                        .findByToken(request.getRefreshToken())
                         .orElseThrow(() ->
                                 new InvalidCredentialsException(
                                         "Invalid refresh token"
@@ -155,7 +161,6 @@ public class AuthService {
                         );
 
         storedRefreshToken.setRevoked(true);
-
         refreshTokenRepository.save(storedRefreshToken);
     }
 }

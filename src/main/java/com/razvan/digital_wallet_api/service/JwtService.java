@@ -93,4 +93,7 @@ public class JwtService {
     public boolean isRefreshToken(String token) {
         return "REFRESH".equals(extractTokenType(token));
     }
+    public Date extractExpiration(String token) {
+        return extractAllClaims(token).getExpiration();
+    }
 }

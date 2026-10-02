@@ -1,31 +1,31 @@
 package com.razvan.digital_wallet_api.integration;
 
+import com.razvan.digital_wallet_api.entity.RefreshToken;
 import com.razvan.digital_wallet_api.entity.Role;
 import com.razvan.digital_wallet_api.entity.User;
+import com.razvan.digital_wallet_api.repository.RefreshTokenRepository;
 import com.razvan.digital_wallet_api.repository.UserRepository;
 import com.razvan.digital_wallet_api.service.JwtService;
-import com.razvan.digital_wallet_api.entity.RefreshToken;
-import com.razvan.digital_wallet_api.repository.RefreshTokenRepository;
-
-import java.time.LocalDateTime;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
-
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
-
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -66,105 +66,89 @@ class AuthControllerIntegrationTest {
     void setUp() {
         refreshTokenRepository.deleteAll();
         userRepository.deleteAll();
-        userRepository.deleteAll();
+    }
+
+    private User createUser(String email) {
+        User user = new User(
+                "Razvan",
+                "Test",
+                email,
+                passwordEncoder.encode("password123")
+        );
+
+        user.setRole(Role.USER);
+
+        return userRepository.save(user);
+    }
+
+    private LocalDateTime expirationOf(String token) {
+        return LocalDateTime.ofInstant(
+                jwtService.extractExpiration(token).toInstant(),
+                ZoneOffset.UTC
+        );
     }
 
     @Test
     void loginShouldReturnAccessAndRefreshToken() throws Exception {
-
-        User user = new User(
-                "Razvan",
-                "Test",
-                "auth@test.com",
-                passwordEncoder.encode("password123")
-        );
-
-        user.setRole(Role.USER);
-
-        userRepository.save(user);
-
-        String requestBody = """
-                {
-                  "email": "auth@test.com",
-                  "password": "password123"
-                }
-                """;
+        createUser("auth@test.com");
 
         mockMvc.perform(
                         post("/api/auth/login")
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(requestBody)
+                                .content("""
+                                        {
+                                          "email": "auth@test.com",
+                                          "password": "password123"
+                                        }
+                                        """)
                 )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").exists())
-                .andExpect(jsonPath("$.refreshToken").exists());
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty());
     }
 
     @Test
     void refreshShouldReturnNewAccessToken() throws Exception {
+        User user = createUser("refresh@test.com");
 
-        User user = new User(
-                "Razvan",
-                "Test",
-                "refresh@test.com",
-                passwordEncoder.encode("password123")
-        );
-
-        user.setRole(Role.USER);
-
-        user = userRepository.save(user);
-
-        String refreshToken =
+        String token =
                 jwtService.generateRefreshToken(user.getEmail());
 
-        RefreshToken storedRefreshToken =
+        refreshTokenRepository.save(
                 new RefreshToken(
-                        refreshToken,
-                        LocalDateTime.now().plusDays(7),
+                        token,
+                        expirationOf(token),
                         false,
                         user
-                );
-
-        refreshTokenRepository.save(storedRefreshToken);
-
-        String requestBody = """
-                {
-                  "refreshToken": "%s"
-                }
-                """.formatted(refreshToken);
+                )
+        );
 
         mockMvc.perform(
                         post("/api/auth/refresh")
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .content(requestBody)
+                                .content("""
+                                        {
+                                          "refreshToken": "%s"
+                                        }
+                                        """.formatted(token))
                 )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").exists());
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
 
     @Test
     void refreshTokenShouldNotAccessProtectedEndpoint()
             throws Exception {
+        User user = createUser("refresh-protected@test.com");
 
-        User user = new User(
-                "Razvan",
-                "Test",
-                "refresh-protected@test.com",
-                passwordEncoder.encode("password123")
-        );
-
-        user.setRole(Role.USER);
-
-        user = userRepository.save(user);
-
-        String refreshToken =
+        String token =
                 jwtService.generateRefreshToken(user.getEmail());
 
         mockMvc.perform(
                         get("/api/wallets/1")
                                 .header(
                                         "Authorization",
-                                        "Bearer " + refreshToken
+                                        "Bearer " + token
                                 )
                 )
                 .andExpect(status().isUnauthorized());
@@ -172,35 +156,25 @@ class AuthControllerIntegrationTest {
 
     @Test
     void logoutShouldRevokeRefreshToken() throws Exception {
+        User user = createUser("logout@test.com");
 
-        User user = new User(
-                "Razvan",
-                "Test",
-                "logout@test.com",
-                passwordEncoder.encode("password123")
-        );
-
-        user.setRole(Role.USER);
-        user = userRepository.save(user);
-
-        String refreshToken =
+        String token =
                 jwtService.generateRefreshToken(user.getEmail());
 
-        RefreshToken storedRefreshToken =
+        refreshTokenRepository.save(
                 new RefreshToken(
-                        refreshToken,
-                        LocalDateTime.now().plusDays(7),
+                        token,
+                        expirationOf(token),
                         false,
                         user
-                );
-
-        refreshTokenRepository.save(storedRefreshToken);
+                )
+        );
 
         String requestBody = """
-            {
-              "refreshToken": "%s"
-            }
-            """.formatted(refreshToken);
+                {
+                  "refreshToken": "%s"
+                }
+                """.formatted(token);
 
         mockMvc.perform(
                         post("/api/auth/logout")
@@ -219,5 +193,77 @@ class AuthControllerIntegrationTest {
                         jsonPath("$.error")
                                 .value("INVALID_CREDENTIALS")
                 );
+    }
+
+    @Test
+    void loginShouldStoreRefreshExpirationFromJwt()
+            throws Exception {
+        User user = createUser("expiration@test.com");
+
+        Long originalExpiration =
+                (Long) ReflectionTestUtils.getField(
+                        jwtService,
+                        "refreshExpiration"
+                );
+
+        try {
+            ReflectionTestUtils.setField(
+                    jwtService,
+                    "refreshExpiration",
+                    2L * 60 * 60 * 1000
+            );
+
+            LocalDateTime beforeLogin =
+                    LocalDateTime.now(ZoneOffset.UTC).withNano(0);
+
+            String response = mockMvc.perform(
+                            post("/api/auth/login")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "email": "%s",
+                                              "password": "password123"
+                                            }
+                                            """.formatted(user.getEmail()))
+                    )
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+
+            LocalDateTime afterLogin =
+                    LocalDateTime.now(ZoneOffset.UTC).withNano(0);
+
+            String token = objectMapper.readTree(response)
+                    .get("refreshToken")
+                    .asText();
+
+            RefreshToken stored =
+                    refreshTokenRepository.findByToken(token)
+                            .orElseThrow();
+
+            LocalDateTime jwtExpiration = expirationOf(token);
+
+            assertEquals(
+                    jwtExpiration,
+                    stored.getExpiresAt()
+            );
+
+            assertFalse(
+                    jwtExpiration.isBefore(beforeLogin.plusHours(2)),
+                    "Expiration must be at least two hours after login began"
+            );
+
+            assertFalse(
+                    jwtExpiration.isAfter(afterLogin.plusHours(2)),
+                    "Expiration must be at most two hours after login finished"
+            );
+        } finally {
+            ReflectionTestUtils.setField(
+                    jwtService,
+                    "refreshExpiration",
+                    originalExpiration
+            );
+        }
     }
 }
