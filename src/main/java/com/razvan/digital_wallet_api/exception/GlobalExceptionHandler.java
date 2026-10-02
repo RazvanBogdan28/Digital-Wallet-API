@@ -1,5 +1,7 @@
 package com.razvan.digital_wallet_api.exception;
 
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -8,7 +10,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -19,176 +20,118 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ResponseEntity<Map<String, Object>> handleUserAlreadyExists(
-            UserAlreadyExistsException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "USER_ALREADY_EXISTS");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
+            UserAlreadyExistsException ex
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                "USER_ALREADY_EXISTS",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleUserNotFound(
-            UserNotFoundException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.NOT_FOUND.value());
-        error.put("error", "USER_NOT_FOUND");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(error);
+            UserNotFoundException ex
+    ) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "USER_NOT_FOUND",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(WalletAlreadyExistsException.class)
     public ResponseEntity<Map<String, Object>> handleWalletAlreadyExists(
-            WalletAlreadyExistsException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "WALLET_ALREADY_EXISTS");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
+            WalletAlreadyExistsException ex
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                "WALLET_ALREADY_EXISTS",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(WalletNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleWalletNotFound(
-            WalletNotFoundException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.NOT_FOUND.value());
-        error.put("error", "WALLET_NOT_FOUND");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(error);
+            WalletNotFoundException ex
+    ) {
+        return error(
+                HttpStatus.NOT_FOUND,
+                "WALLET_NOT_FOUND",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(InsufficientFundsException.class)
     public ResponseEntity<Map<String, Object>> handleInsufficientFunds(
-            InsufficientFundsException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "INSUFFICIENT_FUNDS");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+            InsufficientFundsException ex
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "INSUFFICIENT_FUNDS",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(SameWalletTransferException.class)
     public ResponseEntity<Map<String, Object>> handleSameWalletTransfer(
-            SameWalletTransferException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "SAME_WALLET_TRANSFER");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+            SameWalletTransferException ex
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "SAME_WALLET_TRANSFER",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(CurrencyMismatchException.class)
     public ResponseEntity<Map<String, Object>> handleCurrencyMismatch(
-            CurrencyMismatchException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "CURRENCY_MISMATCH");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+            CurrencyMismatchException ex
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "CURRENCY_MISMATCH",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<Map<String, Object>> handleOptimisticLockingFailure(
-            ObjectOptimisticLockingFailureException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "CONCURRENT_MODIFICATION");
-        error.put(
-                "message",
+            ObjectOptimisticLockingFailureException ex
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                "CONCURRENT_MODIFICATION",
                 "The wallet was modified by another request. Please try again."
         );
-
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
     }
 
     @ExceptionHandler(DuplicateTransactionException.class)
     public ResponseEntity<Map<String, Object>> handleDuplicateTransaction(
-            DuplicateTransactionException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "DUPLICATE_TRANSACTION");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
+            DuplicateTransactionException ex
+    ) {
+        return error(
+                HttpStatus.CONFLICT,
+                "DUPLICATE_TRANSACTION",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidRequest(
             HttpMessageNotReadableException ex
     ) {
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "INVALID_REQUEST");
-        error.put(
-                "message",
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_REQUEST",
                 "Invalid request body. Check the JSON syntax and field values."
         );
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationErrors(
-            MethodArgumentNotValidException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
+            MethodArgumentNotValidException ex
+    ) {
         String message = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -196,80 +139,127 @@ public class GlobalExceptionHandler {
                 .map(fieldError -> fieldError.getDefaultMessage())
                 .orElse("Validation failed");
 
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "VALIDATION_ERROR");
-        error.put("message", message);
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_ERROR",
+                message
+        );
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(
-            IllegalArgumentException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("error", "INVALID_PARAMETER");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+            IllegalArgumentException ex
+    ) {
+        return error(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PARAMETER",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidCredentials(
-            InvalidCredentialsException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.UNAUTHORIZED.value());
-        error.put("error", "INVALID_CREDENTIALS");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
-                .body(error);
+            InvalidCredentialsException ex
+    ) {
+        return error(
+                HttpStatus.UNAUTHORIZED,
+                "INVALID_CREDENTIALS",
+                ex.getMessage()
+        );
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Map<String, Object>> handleAccessDenied(
-            AccessDeniedException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.FORBIDDEN.value());
-        error.put("error", "ACCESS_DENIED");
-        error.put("message", ex.getMessage());
-
-        return ResponseEntity
-                .status(HttpStatus.FORBIDDEN)
-                .body(error);
+            AccessDeniedException ex
+    ) {
+        return error(
+                HttpStatus.FORBIDDEN,
+                "ACCESS_DENIED",
+                ex.getMessage()
+        );
     }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(
             DataIntegrityViolationException ex
     ) {
-        Map<String, Object> error = new HashMap<>();
+        ConstraintViolationException violation =
+                findConstraintViolation(ex);
 
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.CONFLICT.value());
-        error.put("error", "DATA_INTEGRITY_CONFLICT");
-        error.put(
-                "message",
-                "The request conflicts with stored data. "
-                        + "Retry the same operation with the same Idempotency-Key."
+        if (violation != null
+                && "23505".equals(violation.getSQLState())) {
+
+            String constraint = violation.getConstraintName();
+
+            if ("uk_users_email_normalized".equals(constraint)
+                    || "users_email_key".equals(constraint)) {
+                return error(
+                        HttpStatus.CONFLICT,
+                        "USER_ALREADY_EXISTS",
+                        "A user with this email already exists"
+                );
+            }
+
+            if ("uk_wallet_user_currency".equals(constraint)) {
+                return error(
+                        HttpStatus.CONFLICT,
+                        "WALLET_ALREADY_EXISTS",
+                        "User already has a wallet in this currency"
+                );
+            }
+
+            if ("transactions_idempotency_key_key".equals(constraint)) {
+                return error(
+                        HttpStatus.CONFLICT,
+                        "DATA_INTEGRITY_CONFLICT",
+                        "Another request used this Idempotency-Key. "
+                                + "Retry the same operation with the same key "
+                                + "to check its result."
+                );
+            }
+        }
+
+        return error(
+                HttpStatus.CONFLICT,
+                "DATA_INTEGRITY_CONFLICT",
+                "The request conflicts with stored data."
         );
+    }
 
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
+    private ConstraintViolationException findConstraintViolation(
+            Throwable exception
+    ) {
+        Throwable current = exception;
+
+        while (current != null) {
+            if (current instanceof ConstraintViolationException violation) {
+                return violation;
+            }
+
+            Throwable next = current.getCause();
+
+            if (next == current) {
+                break;
+            }
+
+            current = next;
+        }
+
+        return null;
+    }
+
+    private ResponseEntity<Map<String, Object>> error(
+            HttpStatus status,
+            String code,
+            String message
+    ) {
+        Map<String, Object> body = new HashMap<>();
+
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", status.value());
+        body.put("error", code);
+        body.put("message", message);
+
+        return ResponseEntity.status(status).body(body);
     }
 }
