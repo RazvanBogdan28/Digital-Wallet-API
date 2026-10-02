@@ -1086,4 +1086,194 @@ class WalletControllerIntegrationTest {
         assertWalletBalance(wallet.getId(), maximum);
         assertEquals(1L, transactionRepository.count());
     }
+    @Test
+    void simultaneousOppositeTransfersShouldBothComplete() throws Exception {
+        Wallet first = createMoneyTestWallet(
+                "opposite-first@test.com", "100.00"
+        );
+
+        Wallet second = createMoneyTestWallet(
+                "opposite-second@test.com", "100.00"
+        );
+
+        String firstToken =
+                jwtService.generateAccessToken(first.getUser().getEmail());
+
+        String secondToken =
+                jwtService.generateAccessToken(second.getUser().getEmail());
+
+        for (int round = 0; round < 5; round++) {
+            String forwardKey = UUID.randomUUID().toString();
+            String reverseKey = UUID.randomUUID().toString();
+
+            var executor = Executors.newFixedThreadPool(2);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+
+            try {
+                var forward = executor.submit(() -> {
+                    ready.countDown();
+
+                    if (!start.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Start timeout");
+                    }
+
+                    return mockMvc.perform(transferCall(
+                            first.getId(),
+                            second.getId(),
+                            firstToken,
+                            forwardKey,
+                            "10.00"
+                    )).andReturn();
+                });
+
+                var reverse = executor.submit(() -> {
+                    ready.countDown();
+
+                    if (!start.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Start timeout");
+                    }
+
+                    return mockMvc.perform(transferCall(
+                            second.getId(),
+                            first.getId(),
+                            secondToken,
+                            reverseKey,
+                            "15.00"
+                    )).andReturn();
+                });
+
+                assertTrue(ready.await(10, TimeUnit.SECONDS));
+                start.countDown();
+
+                var forwardResponse =
+                        forward.get(20, TimeUnit.SECONDS).getResponse();
+
+                var reverseResponse =
+                        reverse.get(20, TimeUnit.SECONDS).getResponse();
+
+                assertEquals(
+                        200,
+                        forwardResponse.getStatus(),
+                        forwardResponse.getContentAsString()
+                );
+
+                assertEquals(
+                        200,
+                        reverseResponse.getStatus(),
+                        reverseResponse.getContentAsString()
+                );
+            } finally {
+                start.countDown();
+                executor.shutdownNow();
+                assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+            }
+        }
+
+        assertWalletBalance(first.getId(), "125.00");
+        assertWalletBalance(second.getId(), "75.00");
+        assertEquals(10L, transactionRepository.count());
+    }
+
+    @Test
+    void simultaneousDepositAndTransferShouldPreserveBothChanges()
+            throws Exception {
+
+        Wallet source = createMoneyTestWallet(
+                "parallel-source@test.com", "100.00"
+        );
+
+        Wallet destination = createMoneyTestWallet(
+                "parallel-destination@test.com", "50.00"
+        );
+
+        String token =
+                jwtService.generateAccessToken(source.getUser().getEmail());
+
+        String depositKey = UUID.randomUUID().toString();
+        String transferKey = UUID.randomUUID().toString();
+
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            var deposit = executor.submit(() -> {
+                ready.countDown();
+
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Start timeout");
+                }
+
+                return mockMvc.perform(depositCall(
+                        source.getId(), token, depositKey, "25.00"
+                )).andReturn();
+            });
+
+            var transfer = executor.submit(() -> {
+                ready.countDown();
+
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Start timeout");
+                }
+
+                return mockMvc.perform(transferCall(
+                        source.getId(),
+                        destination.getId(),
+                        token,
+                        transferKey,
+                        "10.00"
+                )).andReturn();
+            });
+
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+
+            var depositResponse =
+                    deposit.get(20, TimeUnit.SECONDS).getResponse();
+
+            var transferResponse =
+                    transfer.get(20, TimeUnit.SECONDS).getResponse();
+
+            assertEquals(
+                    200,
+                    depositResponse.getStatus(),
+                    depositResponse.getContentAsString()
+            );
+
+            assertEquals(
+                    200,
+                    transferResponse.getStatus(),
+                    transferResponse.getContentAsString()
+            );
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+
+        assertWalletBalance(source.getId(), "115.00");
+        assertWalletBalance(destination.getId(), "60.00");
+        assertEquals(2L, transactionRepository.count());
+    }
+
+    private MockHttpServletRequestBuilder transferCall(
+            Long sourceId,
+            Long destinationId,
+            String token,
+            String key,
+            String amount
+    ) {
+        return post("/api/wallets/{id}/transfer", sourceId)
+                .header("Authorization", "Bearer " + token)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "toWalletId": %d,
+                      "amount": "%s",
+                      "description": "Concurrent transfer"
+                    }
+                    """.formatted(destinationId, amount));
+    }
 }

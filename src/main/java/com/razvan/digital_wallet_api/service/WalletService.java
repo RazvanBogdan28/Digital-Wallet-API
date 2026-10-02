@@ -26,12 +26,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.Instant;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class WalletService {
@@ -66,29 +66,21 @@ public class WalletService {
         }
 
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() ->
-                        new UserNotFoundException(
-                                "User not found with id: " + request.getUserId()
-                        )
-                );
+                .orElseThrow(() -> new UserNotFoundException(
+                        "User not found with id: " + request.getUserId()
+                ));
 
         Currency currency = request.getCurrency();
 
         if (walletRepository.existsByUserIdAndCurrency(
-                request.getUserId(),
-                currency
+                request.getUserId(), currency
         )) {
             throw new WalletAlreadyExistsException(
                     "User already has a wallet in currency: " + currency
             );
         }
 
-        Wallet wallet = new Wallet(
-                currency,
-                BigDecimal.ZERO,
-                user
-        );
-
+        Wallet wallet = new Wallet(currency, BigDecimal.ZERO, user);
         Wallet savedWallet = walletRepository.save(wallet);
 
         return mapToResponse(savedWallet);
@@ -114,11 +106,9 @@ public class WalletService {
 
     public WalletResponse getWalletById(Long id) {
         Wallet wallet = walletRepository.findById(id)
-                .orElseThrow(() ->
-                        new WalletNotFoundException(
-                                "Wallet not found with id: " + id
-                        )
-                );
+                .orElseThrow(() -> new WalletNotFoundException(
+                        "Wallet not found with id: " + id
+                ));
 
         verifyWalletOwnership(wallet);
 
@@ -139,12 +129,10 @@ public class WalletService {
             );
         }
 
-        Wallet wallet = walletRepository.findById(walletId)
-                .orElseThrow(() ->
-                        new WalletNotFoundException(
-                                "Wallet not found with id: " + walletId
-                        )
-                );
+        Wallet wallet = walletRepository.findByIdForUpdate(walletId)
+                .orElseThrow(() -> new WalletNotFoundException(
+                        "Wallet not found with id: " + walletId
+                ));
 
         verifyWalletOwnership(wallet);
 
@@ -176,7 +164,6 @@ public class WalletService {
         }
 
         BigDecimal newBalance = wallet.getBalance().add(amount);
-
         validateBalance(newBalance);
 
         Transaction transaction = new Transaction(
@@ -194,7 +181,6 @@ public class WalletService {
         transactionRepository.saveAndFlush(transaction);
 
         wallet.setBalance(newBalance);
-
         Wallet savedWallet = walletRepository.save(wallet);
 
         return mapToResponse(savedWallet);
@@ -209,22 +195,57 @@ public class WalletService {
         if (idempotencyKey == null
                 || idempotencyKey.isBlank()
                 || idempotencyKey.length() > 255) {
-
             throw new IllegalArgumentException(
                     "Idempotency-Key must contain between 1 and 255 characters"
             );
         }
 
-        Wallet fromWallet = walletRepository.findById(fromWalletId)
-                .orElseThrow(() ->
-                        new WalletNotFoundException(
-                                "Source wallet not found with id: " + fromWalletId
-                        )
-                );
+        // Verificăm proprietarul fără să încărcăm soldul înainte de blocare.
+        Long ownerId = walletRepository.findOwnerIdById(fromWalletId)
+                .orElseThrow(() -> new WalletNotFoundException(
+                        "Source wallet not found with id: " + fromWalletId
+                ));
 
-        verifyWalletOwnership(fromWallet);
+        User authenticatedUser = getAuthenticatedUser();
+
+        if (!ownerId.equals(authenticatedUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have access to this wallet"
+            );
+        }
+
+        Long toWalletId = request.getToWalletId();
+
+        if (toWalletId == null || toWalletId <= 0) {
+            throw new IllegalArgumentException(
+                    "Destination wallet id must be greater than 0"
+            );
+        }
 
         BigDecimal amount = validateAmount(request.getAmount());
+
+        // Toate transferurile blochează portofelele în ordinea ID-urilor.
+        Long lowerId = Math.min(fromWalletId, toWalletId);
+        Long higherId = Math.max(fromWalletId, toWalletId);
+
+        Wallet lowerWallet = lockWallet(lowerId, fromWalletId);
+        Wallet higherWallet = lowerId.equals(higherId)
+                ? lowerWallet
+                : lockWallet(higherId, fromWalletId);
+
+        Wallet fromWallet = fromWalletId.equals(lowerId)
+                ? lowerWallet
+                : higherWallet;
+
+        Wallet toWallet = toWalletId.equals(lowerId)
+                ? lowerWallet
+                : higherWallet;
+
+        if (!fromWallet.getUser().getId().equals(authenticatedUser.getId())) {
+            throw new AccessDeniedException(
+                    "You do not have access to this wallet"
+            );
+        }
 
         var existing =
                 transactionRepository.findByIdempotencyKey(idempotencyKey);
@@ -235,13 +256,11 @@ public class WalletService {
             boolean sameTransfer =
                     previous.getType() == TransactionType.TRANSFER
                             && previous.getStatus() == TransactionStatus.COMPLETED
-                            && previous.getFromWallet().getId()
-                            .equals(fromWalletId)
-                            && previous.getToWallet().getId()
-                            .equals(request.getToWalletId())
+                            && previous.getFromWallet().getId().equals(fromWalletId)
+                            && previous.getToWallet().getId().equals(toWalletId)
                             && previous.getCurrency() == fromWallet.getCurrency()
                             && previous.getAmount().compareTo(amount) == 0
-                            && java.util.Objects.equals(
+                            && Objects.equals(
                             previous.getDescription(),
                             request.getDescription()
                     );
@@ -256,14 +275,6 @@ public class WalletService {
                     "Transfer already processed"
             );
         }
-
-        Wallet toWallet = walletRepository.findById(request.getToWalletId())
-                .orElseThrow(() ->
-                        new WalletNotFoundException(
-                                "Destination wallet not found with id: "
-                                        + request.getToWalletId()
-                        )
-                );
 
         if (fromWallet.getId().equals(toWallet.getId())) {
             throw new SameWalletTransferException(
@@ -315,11 +326,17 @@ public class WalletService {
         return mapToResponse(fromWallet);
     }
 
+    private Wallet lockWallet(Long walletId, Long fromWalletId) {
+        return walletRepository.findByIdForUpdate(walletId)
+                .orElseThrow(() -> new WalletNotFoundException(
+                        (walletId.equals(fromWalletId) ? "Source" : "Destination")
+                                + " wallet not found with id: " + walletId
+                ));
+    }
+
     private BigDecimal validateAmount(BigDecimal amount) {
         if (amount == null) {
-            throw new IllegalArgumentException(
-                    "Amount is required"
-            );
+            throw new IllegalArgumentException("Amount is required");
         }
 
         if (amount.compareTo(MIN_AMOUNT) < 0) {
@@ -370,19 +387,14 @@ public class WalletService {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
 
-        if (authentication == null
-                || !authentication.isAuthenticated()) {
-            throw new AccessDeniedException(
-                    "Authentication required"
-            );
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AccessDeniedException("Authentication required");
         }
 
         return userRepository.findByEmail(authentication.getName())
-                .orElseThrow(() ->
-                        new UserNotFoundException(
-                                "Authenticated user not found"
-                        )
-                );
+                .orElseThrow(() -> new UserNotFoundException(
+                        "Authenticated user not found"
+                ));
     }
 
     private void verifyWalletOwnership(Wallet wallet) {
