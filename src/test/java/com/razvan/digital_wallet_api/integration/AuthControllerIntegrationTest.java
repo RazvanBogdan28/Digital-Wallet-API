@@ -266,4 +266,58 @@ class AuthControllerIntegrationTest {
             );
         }
     }
+
+    @Test
+    void emailShouldBeCaseInsensitiveForRegistrationAndLogin()
+            throws Exception {
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "firstName": "Ana",
+                                          "lastName": "Test",
+                                          "email": "Ana.Case@Test.com",
+                                          "password": "password123"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath("$.email").value("ana.case@test.com")
+                );
+
+        mockMvc.perform(
+                        post("/api/users")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "firstName": "Ana",
+                                          "lastName": "Duplicate",
+                                          "email": "ANA.CASE@TEST.COM",
+                                          "password": "password123"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isConflict())
+                .andExpect(
+                        jsonPath("$.error").value("USER_ALREADY_EXISTS")
+                );
+
+        mockMvc.perform(
+                        post("/api/auth/login")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "email": "ANA.CASE@TEST.COM",
+                                          "password": "password123"
+                                        }
+                                        """)
+                )
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+
+        assertEquals(1L, userRepository.count());
+    }
 }

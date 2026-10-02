@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class UserService {
@@ -30,7 +31,11 @@ public class UserService {
     }
 
     public UserResponse createUser(CreateUserRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String email = request.getEmail()
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        if (userRepository.existsByEmail(email)) {
             throw new UserAlreadyExistsException(
                     "A user with this email already exists"
             );
@@ -42,7 +47,7 @@ public class UserService {
         User user = new User(
                 request.getFirstName(),
                 request.getLastName(),
-                request.getEmail(),
+                email,
                 encodedPassword
         );
 
