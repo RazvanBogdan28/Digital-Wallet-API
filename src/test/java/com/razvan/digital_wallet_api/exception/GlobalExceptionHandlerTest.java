@@ -4,10 +4,14 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class GlobalExceptionHandlerTest {
 
@@ -125,5 +129,45 @@ class GlobalExceptionHandlerTest {
         var body = response.getBody();
         assertNotNull(body);
         assertEquals("DATA_INTEGRITY_CONFLICT", body.get("error"));
+    }
+
+    @Test
+    void missingRequestHeaderShouldReturnBadRequestWithHeaderName() {
+        MissingRequestHeaderException ex =
+                mock(MissingRequestHeaderException.class);
+
+        when(ex.getHeaderName()).thenReturn("Idempotency-Key");
+
+        var response = handler.handleMissingRequestHeader(ex);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        var body = response.getBody();
+        assertNotNull(body);
+        assertEquals("MISSING_HEADER", body.get("error"));
+        assertEquals(
+                "Missing required header: Idempotency-Key",
+                body.get("message")
+        );
+    }
+
+    @Test
+    void methodArgumentTypeMismatchShouldReturnBadRequestWithParameterName() {
+        MethodArgumentTypeMismatchException ex =
+                mock(MethodArgumentTypeMismatchException.class);
+
+        when(ex.getName()).thenReturn("walletId");
+
+        var response = handler.handleMethodArgumentTypeMismatch(ex);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+
+        var body = response.getBody();
+        assertNotNull(body);
+        assertEquals("TYPE_MISMATCH", body.get("error"));
+        assertEquals(
+                "Invalid value for parameter: walletId",
+                body.get("message")
+        );
     }
 }
