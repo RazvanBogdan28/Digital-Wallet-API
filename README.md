@@ -390,7 +390,7 @@ Authorization: Bearer <access-token>
       "type": "DEPOSIT",
       "status": "COMPLETED",
       "createdAt": "2026-10-02T18:00:00Z",
-      "description": null
+      "description": "Deposit"
     }
   ],
   "totalElements": 2,
