@@ -133,6 +133,7 @@ public class WalletController {
         return ResponseEntity.ok(
                 walletService.getWalletById(id)
         );
+
     }
 
     @PostMapping("/{id}/deposit")
