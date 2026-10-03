@@ -320,4 +320,62 @@ class UserControllerIntegrationTest {
                 + "d".repeat(finalLabelLength)
                 + ".com";
     }
+    @Test
+    void getCurrentUserShouldReturnOwnProfileAndUserRole()
+            throws Exception {
+        User user = createUser("me-user@test.com", Role.USER);
+        createUser("me-other@test.com", Role.USER);
+
+        String token =
+                jwtService.generateAccessToken(user.getEmail());
+
+        mockMvc.perform(
+                        get("/api/users/me")
+                                .header(
+                                        "Authorization",
+                                        "Bearer " + token
+                                )
+                )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(user.getId().intValue())
+                )
+                .andExpect(
+                        jsonPath("$.email")
+                                .value(user.getEmail())
+                )
+                .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    @Test
+    void getCurrentUserShouldReturnAdminRole() throws Exception {
+        User admin = createUser("me-admin@test.com", Role.ADMIN);
+
+        String token =
+                jwtService.generateAccessToken(admin.getEmail());
+
+        mockMvc.perform(
+                        get("/api/users/me")
+                                .header(
+                                        "Authorization",
+                                        "Bearer " + token
+                                )
+                )
+                .andExpect(status().isOk())
+                .andExpect(
+                        jsonPath("$.id")
+                                .value(admin.getId().intValue())
+                )
+                .andExpect(jsonPath("$.role").value("ADMIN"))
+                .andExpect(jsonPath("$.password").doesNotExist());
+    }
+
+    @Test
+    void getCurrentUserShouldReturn401WithoutAuthentication()
+            throws Exception {
+        mockMvc.perform(get("/api/users/me"))
+                .andExpect(status().isUnauthorized());
+    }
 }

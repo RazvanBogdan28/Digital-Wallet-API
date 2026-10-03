@@ -3,16 +3,13 @@ package com.razvan.digital_wallet_api.controller;
 import com.razvan.digital_wallet_api.dto.CreateUserRequest;
 import com.razvan.digital_wallet_api.dto.UserResponse;
 import com.razvan.digital_wallet_api.service.UserService;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-
 import jakarta.validation.Valid;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -55,7 +52,6 @@ public class UserController {
     public ResponseEntity<UserResponse> createUser(
             @Valid @RequestBody CreateUserRequest request
     ) {
-
         UserResponse createdUser =
                 userService.createUser(request);
 
@@ -64,11 +60,37 @@ public class UserController {
                 .body(createdUser);
     }
 
+    @GetMapping("/me")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(
+            summary = "Get current user",
+            description = "Returns the authenticated user's profile and role."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Current user returned successfully"
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Unauthorized"
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Authenticated user not found"
+            )
+    })
+    public ResponseEntity<UserResponse> getCurrentUser() {
+        return ResponseEntity.ok(
+                userService.getCurrentUser()
+        );
+    }
+
     @GetMapping
     @SecurityRequirement(name = "bearerAuth")
     @Operation(
             summary = "Get all users",
-            description = "Returns all registered users. This endpoint is accessible only to users with the ADMIN role."
+            description = "Returns all registered users. Requires the ADMIN role."
     )
     @ApiResponses({
             @ApiResponse(
@@ -85,7 +107,6 @@ public class UserController {
             )
     })
     public ResponseEntity<List<UserResponse>> getAllUsers() {
-
         return ResponseEntity.ok(
                 userService.getAllUsers()
         );
@@ -95,7 +116,7 @@ public class UserController {
     @SecurityRequirement(name = "bearerAuth")
     @Operation(
             summary = "Get user by id",
-            description = "Returns the user associated with the specified ID."
+            description = "Returns the user's own profile or another profile for an administrator."
     )
     @ApiResponses({
             @ApiResponse(
@@ -107,19 +128,21 @@ public class UserController {
                     description = "Unauthorized"
             ),
             @ApiResponse(
+                    responseCode = "403",
+                    description = "Access denied"
+            ),
+            @ApiResponse(
                     responseCode = "404",
                     description = "User not found"
             )
     })
     public ResponseEntity<UserResponse> getUserById(
-
             @Parameter(
                     description = "User ID",
                     required = true
             )
             @PathVariable Long id
     ) {
-
         return ResponseEntity.ok(
                 userService.getUserById(id)
         );

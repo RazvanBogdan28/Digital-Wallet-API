@@ -58,6 +58,10 @@ public class UserService {
         return mapToResponse(savedUser);
     }
 
+    public UserResponse getCurrentUser() {
+        return mapToResponse(getAuthenticatedUser());
+    }
+
     public List<UserResponse> getAllUsers() {
         User authenticatedUser = getAuthenticatedUser();
 
@@ -103,7 +107,8 @@ public class UserService {
                 user.getId(),
                 user.getFirstName(),
                 user.getLastName(),
-                user.getEmail()
+                user.getEmail(),
+                user.getRole()
         );
     }
 
