@@ -3,6 +3,7 @@ package com.razvan.digital_wallet_api;
 import com.razvan.digital_wallet_api.security.JwtAuthenticationFilter;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 @SpringBootApplication
@@ -31,20 +33,22 @@ public class DigitalWalletApiApplication {
     }
 
     @Bean
-    public UrlBasedCorsConfigurationSource corsConfigurationSource() {
+    public UrlBasedCorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origins:http://localhost:5173,https://digitalwalletfrontend.vercel.app}")
+            String allowedOrigins
+    ) {
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .distinct()
+                .toList();
+
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(
-                List.of(
-                        "http://localhost:5173",
-                        "https://digitalwalletfrontend.vercel.app"
-                )
-        );
-
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(
                 List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         );
-
         configuration.setAllowedHeaders(
                 List.of(
                         "Authorization",
@@ -66,18 +70,14 @@ public class DigitalWalletApiApplication {
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter
     ) throws Exception {
-
         http
                 .csrf(csrf -> csrf.disable())
-
                 .cors(cors -> {})
-
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
                         )
                 )
-
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(
                                 (request, response, authException) ->
@@ -94,29 +94,28 @@ public class DigitalWalletApiApplication {
                                         )
                         )
                 )
-
                 .authorizeHttpRequests(auth -> auth
-                        // Allows Spring to return the original error response.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/actuator/health"
+                        ).permitAll()
                         .requestMatchers(
                                 "/api/auth/login",
                                 "/api/auth/refresh",
                                 "/api/auth/logout"
                         ).permitAll()
-
-                        .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
-
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/users"
+                        ).permitAll()
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
-
                         .anyRequest().authenticated()
                 )
-
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
