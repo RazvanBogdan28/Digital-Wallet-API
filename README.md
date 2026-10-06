@@ -3,17 +3,19 @@
 [![CI](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml/badge.svg)](https://github.com/RazvanBogdan28/Digital-Wallet-API/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-deployed backend REST API built with **Java 21** and **Spring Boot** for user authentication, wallet management, deposits, transfers and transaction history.
+A deployed backend REST API built with **Java 21** and **Spring Boot** for user authentication, wallet management, deposits, transfers and transaction history.
 
 The project focuses on **layered architecture, security, transactional consistency, idempotency, concurrency handling and integration testing**.
 
 A companion React frontend consumes this API — see [Frontend](#frontend) below.
 
+This is a portfolio application. Deposits and transfers update application balances; they do not move real bank funds or process payments through external providers. The application is the existing foundation for a planned evolution into **SecurePay**.
+
 ## Live Demo
 
-- **API:** https://digital-wallet-api-production-2f16.up.railway.app
-- **Swagger UI:** https://digital-wallet-api-production-2f16.up.railway.app/swagger-ui/index.html
-- **Web app:** https://digitalwalletfrontend.vercel.app
+- **API:** https://api.nexyn.ro
+- **Swagger UI:** https://api.nexyn.ro/swagger-ui/index.html
+- **Web app:** https://securepay.nexyn.ro
 - **GitHub:** https://github.com/RazvanBogdan28/Digital-Wallet-API
 
 ## Features
@@ -40,7 +42,9 @@ A companion React frontend consumes this API — see [Frontend](#frontend) below
 - Docker and Docker Compose
 - Unit and integration testing with Testcontainers
 - GitHub Actions CI
-- Railway deployment
+- AWS EC2 deployment with a Caddy HTTPS reverse proxy
+- Spring Boot Actuator health checks
+- Scheduled PostgreSQL backups
 - React frontend (see [Frontend](#frontend))
 
 ## Tech Stack
@@ -61,13 +65,34 @@ A companion React frontend consumes this API — see [Frontend](#frontend) below
 - Mockito
 - Swagger / OpenAPI
 - GitHub Actions
-- Railway
+- AWS EC2 and Elastic IP
+- Caddy
+- Spring Boot Actuator
 
 ## Architecture
 
 ![Digital Wallet API Architecture](docs/architecture.png)
 
 Controllers handle HTTP requests, services enforce business rules, and repositories persist data in PostgreSQL.
+
+### Current deployment
+
+```mermaid
+flowchart TD
+    Browser["Browser"] -->|HTTPS| Frontend["React frontend · Vercel"]
+    Frontend -->|"/api rewrite · HTTPS"| Caddy["Caddy · api.nexyn.ro"]
+    Caddy -->|"Docker network"| API["Spring Boot API"]
+    API --> PostgreSQL["PostgreSQL 17 · persistent volume"]
+    subgraph EC2["AWS EC2 · Docker Compose"]
+        Caddy
+        API
+        PostgreSQL
+    end
+```
+
+The frontend is served at `https://securepay.nexyn.ro`. Vercel forwards relative `/api` requests to `https://api.nexyn.ro`. Caddy terminates HTTPS and forwards requests to the `app` container on the Docker network.
+
+The API and PostgreSQL run in separate containers on one EC2 instance. Their host ports are bound to loopback; public HTTP and HTTPS traffic enters through Caddy. An Elastic IP provides a stable public address for the API DNS record. This is a single-instance deployment, not a highly available cluster.
 
 ### Main packages
 
@@ -142,7 +167,7 @@ Example request:
 }
 ```
 
-Returns `201 Created` with the new user (`id`, `firstName`, `lastName`, `email`). Passwords are excluded from responses. New accounts get the `USER` role.
+Returns `201 Created` with the new user (`id`, `firstName`, `lastName`, `email`, `role`). Passwords are excluded from responses. New accounts get the `USER` role.
 
 Email addresses are matched without case sensitivity and surrounding whitespace. New addresses are stored trimmed and lowercase; the database enforces uniqueness on normalized addresses.
 
@@ -218,6 +243,7 @@ The application supports `USER` and `ADMIN` roles.
 | --- | --- |
 | `POST /api/users` | Public registration |
 | `POST /api/auth/login`, `/refresh`, `/logout` | Public routes; refresh/logout validate the supplied refresh token |
+| `GET /api/users/me` | Authenticated user; returns own profile and role |
 | `GET /api/users` | ADMIN |
 | `GET /api/users/{id}` | Own profile or ADMIN |
 | `GET /api/wallets/user/{userId}` | Own wallets or ADMIN |
@@ -226,6 +252,15 @@ The application supports `USER` and `ADMIN` roles.
 | Transaction history and snapshot endpoints | Wallet owner |
 
 ADMIN access to another user's wallet list does not grant permission to deposit into or transfer from that user's wallet. A transfer recipient may belong to another user, but both wallets must use the same currency.
+
+### Current authenticated profile
+
+```http
+GET /api/users/me
+Authorization: Bearer <access-token>
+```
+
+The response includes `id`, `firstName`, `lastName`, `email` and `role`. The frontend uses this role for admin navigation; the backend independently enforces authorization.
 
 ## Wallet Endpoints
 
@@ -491,7 +526,7 @@ The frontend retains unresolved operation details and keys in `sessionStorage` f
 Production Swagger UI:
 
 ```text
-https://digital-wallet-api-production-2f16.up.railway.app/swagger-ui/index.html
+https://api.nexyn.ro/swagger-ui/index.html
 ```
 
 Local Swagger UI:
@@ -515,7 +550,7 @@ Swagger supports JWT authentication through the **Authorize** button. The local 
 A React + Vite single-page client for this API lives in a separate repository:
 
 - **Repo:** https://github.com/RazvanBogdan28/Digital-Wallet-Frontend
-- **Live app:** https://digitalwalletfrontend.vercel.app
+- **Live app:** https://securepay.nexyn.ro
 
 It covers registration, sign in, wallet management, deposits, transfers and transaction history. It uses a shared access-token refresh request, preserves the session after transient refresh failures, and offers retries for failed data loads. The balance chart uses the wallet snapshot endpoint and exact decimal strings for displayed amounts.
 
@@ -536,8 +571,10 @@ docker compose up --build
 
 Docker Compose starts:
 
-- PostgreSQL
-- Digital Wallet API
+- PostgreSQL, published on host loopback port `5433`
+- Digital Wallet API, published on host loopback port `8080`
+
+PostgreSQL data is stored in the `postgres_data` named volume. Docker image builds skip tests; run the test suite separately or rely on a successful CI run before deployment.
 
 The application will be available at:
 
@@ -638,9 +675,96 @@ Testcontainers starts an isolated PostgreSQL container for integration testing. 
 
 GitHub Actions runs the Maven test suite on pushes and pull requests targeting `main`.
 
-The application is deployed to **Railway** with PostgreSQL as the production database.
+The backend is deployed to **AWS EC2 in Stockholm (`eu-north-1`)** using Docker Compose. PostgreSQL runs on the same instance in a separate container. The React frontend is deployed to **Vercel**, where Git pushes trigger frontend deployments.
 
-Production deployment is available through the links in the **Live Demo** section.
+Backend updates on EC2 are currently **manual**. GitHub Actions validates the backend but does not automatically deploy it to EC2. The former Railway deployment is no longer the frontend's API target. Existing Railway data was not migrated; the AWS deployment started with a new database.
+
+### AWS runtime configuration
+
+The EC2 deployment uses the base `docker-compose.yml` together with `docker-compose.aws.yml`. The latter adds Caddy and persistent volumes for certificate data and configuration. `Caddyfile` defines the API hostname and the upstream `app:8080`.
+
+Create a private `.env` in the backend project directory, using independently generated production secrets:
+
+```env
+DB_PASSWORD=<strong-random-database-password>
+JWT_SECRET=<strong-base64-encoded-signing-secret>
+CORS_ALLOWED_ORIGINS=https://securepay.nexyn.ro,https://digitalwalletfrontend.vercel.app
+```
+
+The angle-bracket values are placeholders, not usable credentials. The AWS `.env` is not stored in Git. Local development can use a different CORS origin list, including `http://localhost:5173`.
+
+Start the full deployment:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+```
+
+Check container status and API health:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.aws.yml ps
+curl -fsS https://api.nexyn.ro/actuator/health
+```
+
+An operational deployment returns:
+
+```json
+{"groups":["liveness","readiness"],"status":"UP"}
+```
+
+Caddy manages the HTTPS certificate and HTTP-to-HTTPS redirect. DNS must point `api.nexyn.ro` to the instance's Elastic IP, and the security group must allow inbound TCP ports `80` and `443`. SSH access is restricted to the administrator's IP. Application and database ports are not opened publicly.
+
+Containers use restart policies and the Docker daemon is enabled at boot. Health checks report container health; an `unhealthy` status alone does not cause Docker to restart a running container.
+
+For manual updates, synchronize the server checkout with a reviewed Git revision, then run the full Compose command above. Review local changes before pulling. Changing `.env` requires recreating the affected container with `docker compose ... up -d`; restarting a container alone does not load new environment values.
+
+### Backups and recovery
+
+The current EC2 host has a `securepay-backup.service` and `securepay-backup.timer`. These host-level files and `/usr/local/bin/securepay-backup` were configured on the instance; cloning the repository does not install them.
+
+The timer runs daily at **03:00 UTC**, with missed runs eligible to execute when the timer is reactivated. The script uses `pg_dump -Fc`, writes a temporary file, checks the archive table of contents and publishes the completed backup. Timestamped backups older than seven days are removed after a successful backup. The initial manual backup is retained separately.
+
+Backups are stored under `/home/ec2-user/securepay-backups` with restricted filesystem permissions. A manual copy was downloaded to a separate laptop. A restore into an isolated test database completed successfully on 6 October 2026.
+
+Inspect scheduling and recent results:
+
+```bash
+sudo systemctl list-timers --all securepay-backup.timer
+sudo journalctl -u securepay-backup.service -n 15 --no-pager
+```
+
+Create a manual archive from the backend project directory:
+
+```bash
+(umask 077; docker compose -f docker-compose.yml -f docker-compose.aws.yml exec -T postgres pg_dump -U postgres -d digital_wallet -Fc > "$HOME/securepay-backups/manual-$(date -u +%Y%m%dT%H%M%SZ).dump")
+```
+
+The backup directory must already exist. On the current EC2 host, Docker commands require `sudo` unless the invoking user has Docker access.
+
+A restore drill uses a new, empty database rather than the live application database:
+
+```bash
+docker exec digital-wallet-postgres createdb -U postgres securepay_restore_test
+docker exec -i digital-wallet-postgres pg_restore -U postgres -d securepay_restore_test --single-transaction < /path/to/backup.dump
+docker exec digital-wallet-postgres psql -U postgres -d securepay_restore_test -c "SELECT COUNT(*) FROM transactions;"
+```
+
+Replace `/path/to/backup.dump` with the intended archive and verify the restored data. Stop if any command fails. After validation, remove only the temporary test database:
+
+```bash
+docker exec digital-wallet-postgres dropdb -U postgres securepay_restore_test
+```
+
+Daily backups currently remain on the same EC2 disk as the application. They do not protect against losing that disk or terminating the instance with its root volume. Automated off-instance storage, such as S3, is **not configured**. Download fresh backups periodically; the laptop copy protects only the data present when that archive was created.
+
+### Operational limits
+
+- Backend, database and proxy share one EC2 instance.
+- Continuous external uptime monitoring and alerting are not configured.
+- Automated backend deployment, rollback and off-instance backup uploads remain future work.
+- AWS Free Plan credits are time-limited; this deployment is not permanently free. Monitor the account's credit balance and plan expiry.
+
+Current deployment URLs are listed in **Live Demo**.
 
 ## Security Notes
 
@@ -676,6 +800,20 @@ This project demonstrates backend development concepts such as:
 - continuous integration
 - cloud deployment
 
+## SecurePay Roadmap
+
+The deployed application currently implements the digital wallet foundation. **SecurePay is the planned evolution**, not an already implemented payment-provider or fraud-detection platform.
+
+Start with a modular Spring Boot monolith, keeping ownership and transaction boundaries explicit:
+
+- Identity and authentication
+- Wallets and a double-entry ledger
+- Payment orchestration and provider sandbox integration
+- Rule-based risk evaluation, limits and review decisions
+- Audit trails, notifications and webhook delivery
+
+Payment processing, double-entry accounting, risk scoring, provider integrations, Redis and a message broker are not part of the current deployment. Add a transactional outbox and idempotent consumers when asynchronous delivery is introduced. Consider extracting services or adopting Kubernetes only when operational requirements justify it.
+
 ## Future Improvements
 
 Possible future additions:
@@ -689,6 +827,8 @@ Possible future additions:
 - fraud / risk checks
 - webhooks
 - observability and metrics
+- automated off-instance backups and regular restore drills
+- automated EC2 deployment and rollback
 
 ## License
 
